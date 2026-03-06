@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Amazon Video Detector</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      width: 340px;
+      font-family: Arial, sans-serif;
+      background: #f0f2f5;
+      color: #333;
+    }
+
+    header {
+      background: #232f3e;
+      color: white;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    header h1 {
+      font-size: 15px;
+      font-weight: bold;
+    }
+
+    header span {
+      font-size: 20px;
+    }
+
+    #content {
+      padding: 12px;
+    }
+
+    .loading {
+      text-align: center;
+      color: #888;
+      padding: 24px 0;
+      font-size: 14px;
+    }
+
+    .no-videos {
+      text-align: center;
+      color: #888;
+      padding: 24px 12px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .no-videos span {
+      font-size: 32px;
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .wrong-page {
+      text-align: center;
+      color: #888;
+      padding: 24px 12px;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .wrong-page span {
+      font-size: 32px;
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .info-box {
+      text-align: center;
+      padding: 20px 14px;
+      font-size: 13px;
+      line-height: 1.6;
+      color: #444;
+    }
+
+    .info-box span {
+      font-size: 32px;
+      display: block;
+      margin-bottom: 10px;
+    }
+
+    .video-count {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 10px;
+      padding: 0 2px;
+    }
+
+    .video-item {
+      background: white;
+      border: 1px solid #dde1e7;
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+
+    .video-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .video-icon {
+      font-size: 18px;
+    }
+
+    .video-meta {
+      flex: 1;
+    }
+
+    .video-title {
+      font-size: 12px;
+      font-weight: bold;
+      color: #232f3e;
+    }
+
+    .video-type {
+      font-size: 11px;
+      color: #999;
+      margin-top: 2px;
+    }
+
+    .video-url {
+      font-size: 10px;
+      color: #aaa;
+      word-break: break-all;
+      margin-bottom: 8px;
+      line-height: 1.4;
+      background: #f8f8f8;
+      padding: 4px 6px;
+      border-radius: 4px;
+    }
+
+    .btn-download {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      width: 100%;
+      background: #ff6b00;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 9px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: bold;
+      transition: background 0.2s;
+    }
+
+    .btn-download:hover:not(:disabled) {
+      background: #e05a00;
+    }
+
+    .btn-download:disabled {
+      cursor: not-allowed;
+      opacity: 0.8;
+    }
+
+    .btn-download.success {
+      background: #2e7d32;
+    }
+
+    .btn-download.error {
+      background: #c62828;
+    }
+
+    .status-msg {
+      font-size: 11px;
+      margin-top: 5px;
+      text-align: center;
+      min-height: 14px;
+      color: #2e7d32;
+    }
+
+    .status-msg.error {
+      color: #c62828;
+    }
+
+    footer {
+      text-align: center;
+      font-size: 10px;
+      color: #bbb;
+      padding: 8px;
+      border-top: 1px solid #eee;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <span>🎬</span>
+    <h1>Amazon Video Detector</h1>
+  </header>
+
+  <div id="content">
+    <div class="loading">⏳ Buscando videos...</div>
+  </div>
+
+  <footer>Solo para uso personal</footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "ProdRadar",
+  "version": "1.0",
+  "description": "Detecta productos con vídeo en Amazon y genera tu ranking en segundos.",
+  "permissions": [
+    "downloads",
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://www.amazon.com/*",
+    "https://www.amazon.es/*",
+    "https://www.amazon.co.uk/*",
+    "https://www.amazon.com.mx/*",
+    "https://www.amazon.de/*",
+    "https://www.amazon.fr/*",
+    "https://www.amazon.it/*",
+    "*://*.ssl-images-amazon.com/*",
+    "*://*.media-amazon.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "128": "icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.amazon.com/*",
+        "https://www.amazon.es/*",
+        "https://www.amazon.co.uk/*",
+        "https://www.amazon.com.mx/*",
+        "https://www.amazon.de/*",
+        "https://www.amazon.fr/*",
+        "https://www.amazon.it/*"
+      ],
+      "js": ["content.js", "sidebar.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}

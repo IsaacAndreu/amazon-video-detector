@@ -34,12 +34,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Pagina de producto: mostrar spinner mientras carga
   content.innerHTML = `<div class="loading">⏳ Buscando vídeos…</div>`;
 
-  // Obtener título del producto desde el content script (DOM vivo)
+  // Obtener título + vídeos del DOM en vivo (content script)
   let productTitle = '';
+  let domVideos = [];
   try {
     await new Promise(resolve => {
       chrome.tabs.sendMessage(tab.id, { action: 'getVideos' }, (res) => {
-        if (!chrome.runtime.lastError && res?.title) productTitle = res.title;
+        if (!chrome.runtime.lastError && res) {
+          if (res.title)  productTitle = res.title;
+          // Filtrar solo URLs de CDN de vídeo de Amazon (VSE + reseñas)
+          if (res.videos) {
+            const cdnRe = /vse-vms-transcoding-artifact|m\.media-amazon\.com\/[^"]*\.m3u8/;
+            domVideos = res.videos
+              .filter(v => v.url && cdnRe.test(v.url))
+              .map(v => ({ url: v.url, title: '', creator: '' }));
+          }
+        }
         resolve();
       });
     });
@@ -56,7 +66,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    const videos = response.videos || [];
+    // Combinar: resultados del fetch de la página + vídeos del DOM en vivo (sin duplicar)
+    const seen   = new Set((response.videos || []).map(v => v.url));
+    const extra  = domVideos.filter(v => !seen.has(v.url));
+    const videos = [...(response.videos || []), ...extra];
 
     if (!videos.length) {
       content.innerHTML = `
@@ -81,8 +94,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         : safeTitle;
       const filename = `${vidSafeTitle}${suffix}.mp4`;
 
-      const label   = video.title   || `Vídeo ${index + 1}`;
+      const isRelated = !!(video.title || video.creator);
+      const label   = video.title   || `Vídeo vendedor ${index + 1}`;
       const creator = video.creator ? `<div class="video-creator">👤 ${escapeHtml(video.creator)}</div>` : '';
+      const tag     = isRelated ? `<span class="video-tag related">Relacionado</span>` : `<span class="video-tag seller">Vendedor</span>`;
       const shortUrl = video.url.length > 65 ? video.url.substring(0, 62) + '...' : video.url;
 
       const item = document.createElement('div');
@@ -93,6 +108,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           <div class="video-meta">
             <div class="video-title">${escapeHtml(label)}</div>
             ${creator}
+            ${tag}
           </div>
         </div>
         <div class="video-url">${shortUrl}</div>

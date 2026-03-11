@@ -408,6 +408,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'getVideos') {
     const v     = findVideosOnPage();
     const title = getProductTitle();
+
+    // Añadir URLs capturadas por el interceptor de fetch/XHR (interceptor.js, MAIN world)
+    try {
+      const intercepted = JSON.parse(sessionStorage.getItem('_pr_vids') || '[]');
+      intercepted.forEach(url => {
+        if (!v.some(x => x.url === url)) v.push({ url, type: 'intercepted' });
+      });
+    } catch (_) {}
+
     sendResponse({ videos: v, hasVideos: v.length > 0, title });
   }
   return true;

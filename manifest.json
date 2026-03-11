@@ -37,6 +37,20 @@
         "https://www.amazon.fr/*",
         "https://www.amazon.it/*"
       ],
+      "js": ["interceptor.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://www.amazon.com/*",
+        "https://www.amazon.es/*",
+        "https://www.amazon.co.uk/*",
+        "https://www.amazon.com.mx/*",
+        "https://www.amazon.de/*",
+        "https://www.amazon.fr/*",
+        "https://www.amazon.it/*"
+      ],
       "js": ["content.js", "sidebar.js"],
       "run_at": "document_idle"
     }

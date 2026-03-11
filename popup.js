@@ -22,7 +22,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const isProductPage = tab.url.includes('/dp/');
 
   if (!isProductPage) {
-    // Pagina de busqueda / listado
     content.innerHTML = `
       <div class="info-box">
         <span>🏷️</span>
@@ -32,9 +31,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
-  // Pagina de producto individual: ofrecer descarga
-  chrome.tabs.sendMessage(tab.id, { action: 'getVideos' }, (response) => {
-    if (chrome.runtime.lastError || !response) {
+  // Pagina de producto: mostrar spinner mientras carga
+  content.innerHTML = `<div class="loading">⏳ Buscando vídeos…</div>`;
+
+  // Obtener título del producto desde el content script (DOM vivo)
+  let productTitle = '';
+  try {
+    await new Promise(resolve => {
+      chrome.tabs.sendMessage(tab.id, { action: 'getVideos' }, (res) => {
+        if (!chrome.runtime.lastError && res?.title) productTitle = res.title;
+        resolve();
+      });
+    });
+  } catch (_) {}
+
+  // Obtener TODOS los vídeos (vendedor + relacionados) via fetch de la página
+  chrome.runtime.sendMessage({ action: 'getAllVideos', pageUrl: tab.url }, (response) => {
+    if (chrome.runtime.lastError || !response?.success) {
       content.innerHTML = `
         <div class="no-videos">
           <span>⚠️</span>
@@ -43,26 +56,33 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    if (!response.hasVideos || response.videos.length === 0) {
+    const videos = response.videos || [];
+
+    if (!videos.length) {
       content.innerHTML = `
         <div class="no-videos">
           <span>🚫</span>
-          Este producto no tiene videos.
+          Este producto no tiene vídeos.
         </div>`;
       return;
     }
 
-    const { videos, title } = response;
-    content.innerHTML = `<div class="video-count">✅ ${videos.length} video${videos.length > 1 ? 's' : ''} encontrado${videos.length > 1 ? 's' : ''}:</div>`;
-
-    // Nombre base desde el título del producto (sin caracteres ilegales en nombres de archivo)
-    const safeTitle = title
-      ? title.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 80)
+    const safeTitle = productTitle
+      ? productTitle.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 80)
       : 'amazon-video';
+
+    content.innerHTML = `<div class="video-count">✅ ${videos.length} vídeo${videos.length > 1 ? 's' : ''} encontrado${videos.length > 1 ? 's' : ''}:</div>`;
 
     videos.forEach((video, index) => {
       const suffix   = videos.length > 1 ? `-${index + 1}` : '';
-      const filename = `${safeTitle}${suffix}.mp4`;
+      // Usar el título del vídeo si existe, si no el del producto
+      const vidSafeTitle = video.title
+        ? video.title.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 80)
+        : safeTitle;
+      const filename = `${vidSafeTitle}${suffix}.mp4`;
+
+      const label   = video.title   || `Vídeo ${index + 1}`;
+      const creator = video.creator ? `<div class="video-creator">👤 ${escapeHtml(video.creator)}</div>` : '';
       const shortUrl = video.url.length > 65 ? video.url.substring(0, 62) + '...' : video.url;
 
       const item = document.createElement('div');
@@ -71,12 +91,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         <div class="video-header">
           <span class="video-icon">🎥</span>
           <div class="video-meta">
-            <div class="video-title">Video ${index + 1}</div>
-            <div class="video-type">Fuente: ${video.type}</div>
+            <div class="video-title">${escapeHtml(label)}</div>
+            ${creator}
           </div>
         </div>
         <div class="video-url">${shortUrl}</div>
-        <button class="btn-download" id="btn-${index}" data-url="${escapeHtml(video.url)}" data-filename="${filename}">
+        <button class="btn-download" id="btn-${index}" data-url="${escapeHtml(video.url)}" data-filename="${escapeHtml(filename)}">
           ⬇️ Descargar en 1 clic
         </button>
         <div class="status-msg" id="status-${index}"></div>
@@ -114,5 +134,5 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 function escapeHtml(str) {
-  return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return (str || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

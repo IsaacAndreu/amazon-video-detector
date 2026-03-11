@@ -289,6 +289,16 @@
       color: #c62828 !important;
       border-color: #ffcdd2 !important;
     }
+    .pr-action-btn.pr-copy-link:hover {
+      background: #e8f5e9 !important;
+      color: #2e7d32 !important;
+      border-color: #a5d6a7 !important;
+    }
+    .pr-action-btn.pr-copy-link.pr-copied {
+      background: #2e7d32 !important;
+      color: white !important;
+      border-color: #2e7d32 !important;
+    }
 
     /* ---- FOOTER con los 3 botones ---- */
     #pr-footer {
@@ -331,6 +341,37 @@
       outline: none !important;
     }
     #pr-folder-input:focus {
+      border-color: #ff6b00 !important;
+      background: white !important;
+    }
+    #pr-tag-row {
+      display: flex !important;
+      align-items: center !important;
+      gap: 6px !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+    }
+    #pr-tag-label {
+      font-size: 11px !important;
+      color: #555 !important;
+      white-space: nowrap !important;
+      font-family: Arial, sans-serif !important;
+      flex-shrink: 0 !important;
+    }
+    #pr-tag-input {
+      flex: 1 !important;
+      font-size: 12px !important;
+      font-family: monospace !important;
+      padding: 5px 8px !important;
+      border: 1px solid #dde1e7 !important;
+      border-radius: 6px !important;
+      background: #f8f9fa !important;
+      color: #232f3e !important;
+      box-sizing: border-box !important;
+      min-width: 0 !important;
+      outline: none !important;
+    }
+    #pr-tag-input:focus {
       border-color: #ff6b00 !important;
       background: white !important;
     }
@@ -441,6 +482,10 @@
           <span id="pr-folder-label">📁 Carpeta:</span>
           <input id="pr-folder-input" type="text" placeholder="nombre-del-proyecto" spellcheck="false">
         </div>
+        <div id="pr-tag-row">
+          <span id="pr-tag-label">🔗 Tag afil.:</span>
+          <input id="pr-tag-input" type="text" placeholder="tu-tag-21" spellcheck="false">
+        </div>
         <div class="pr-footer-btn" id="pr-btn-download" role="button" tabindex="0">⬇️ Descargar todos los assets</div>
         <div class="pr-footer-btn" id="pr-btn-export"   role="button" tabindex="0">📋 Exportar briefing</div>
         <div class="pr-footer-btn" id="pr-btn-clear"    role="button" tabindex="0">🗑️ Limpiar ranking</div>
@@ -456,6 +501,7 @@
     document.body.appendChild(root);
     bindEvents();
     loadAndRender();
+    loadAffiliateTag();
   }
 
   // ── STORAGE ───────────────────────────────────────────────────────────────────
@@ -468,6 +514,19 @@
     chrome.storage.local.get([STORAGE_KEY], result => {
       callback(result[STORAGE_KEY] || []);
     });
+  }
+
+  function loadAffiliateTag() {
+    chrome.storage.local.get(['prodradar_affiliate_tag'], result => {
+      const tag = result['prodradar_affiliate_tag'] || '';
+      const input = document.getElementById('pr-tag-input');
+      if (input && tag) input.value = tag;
+    });
+  }
+
+  function getAffiliateTag() {
+    const input = document.getElementById('pr-tag-input');
+    return (input?.value || '').trim();
   }
 
   // ── RENDER ────────────────────────────────────────────────────────────────────
@@ -519,9 +578,10 @@
           </div>
         </div>
         <div class="pr-actions">
-          <div class="pr-action-btn pr-up"     role="button" tabindex="0" title="Subir">▲</div>
-          <div class="pr-action-btn pr-down"   role="button" tabindex="0" title="Bajar">▼</div>
-          <div class="pr-action-btn pr-remove" role="button" tabindex="0" title="Quitar">✕</div>
+          <div class="pr-action-btn pr-up"        role="button" tabindex="0" title="Subir">▲</div>
+          <div class="pr-action-btn pr-down"      role="button" tabindex="0" title="Bajar">▼</div>
+          <div class="pr-action-btn pr-copy-link" role="button" tabindex="0" title="Copiar enlace afiliado">🔗</div>
+          <div class="pr-action-btn pr-remove"    role="button" tabindex="0" title="Quitar">✕</div>
         </div>
       `;
 
@@ -547,6 +607,11 @@
           saveRanking(updated); render(updated);
           showNotif('Eliminado del ranking');
         });
+      });
+
+      item.querySelector('.pr-copy-link').addEventListener('click', function () {
+        const btn = this;
+        copyAffiliateLink(p.asin, btn);
       });
 
       // Drag & drop
@@ -594,6 +659,11 @@
       document.getElementById('pr-panel').classList.remove('pr-open');
     });
 
+    document.getElementById('pr-tag-input').addEventListener('change', () => {
+      const tag = getAffiliateTag();
+      chrome.storage.local.set({ prodradar_affiliate_tag: tag });
+    });
+
     document.getElementById('pr-btn-download').addEventListener('click', downloadAllAssets);
     document.getElementById('pr-btn-export').addEventListener('click', exportBriefing);
     document.getElementById('pr-btn-clear').addEventListener('click', () => {
@@ -620,6 +690,45 @@
       saveRanking(products); render(products);
       showNotif('✓ Añadido al ranking');
     });
+  }
+
+  // ── COPIAR ENLACE DE AFILIADO ─────────────────────────────────────────────────
+
+  async function copyAffiliateLink(asin, btn) {
+    const tag      = getAffiliateTag();
+    const origin   = location.origin;
+    const longUrl  = tag ? `${origin}/dp/${asin}/?tag=${tag}` : `${origin}/dp/${asin}`;
+
+    let finalUrl = longUrl;
+
+    // Intentar obtener el short link de SiteStripe si hay tag configurado
+    if (tag) {
+      try {
+        const apiUrl = `${origin}/gp/associates/sitestripe/getShortUrl?asin=${asin}&storeId=${tag}&ref=nosim&linkCode=ll2`;
+        const res    = await fetch(apiUrl, { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.shortUrl) finalUrl = data.shortUrl;
+        }
+      } catch (_) {
+        // Si falla SiteStripe usamos el enlace largo sin problema
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(finalUrl);
+      // Feedback visual en el botón
+      btn.classList.add('pr-copied');
+      btn.textContent = '✓';
+      setTimeout(() => {
+        btn.classList.remove('pr-copied');
+        btn.textContent = '🔗';
+      }, 1500);
+      const isShort = finalUrl.includes('amzn.to');
+      showNotif(isShort ? '🔗 Enlace corto copiado' : '🔗 Enlace afiliado copiado');
+    } catch (_) {
+      showNotif('⚠️ No se pudo copiar');
+    }
   }
 
   // ── DESCARGAR ASSETS ──────────────────────────────────────────────────────────
@@ -682,21 +791,28 @@
     loadRanking(products => {
       if (!products.length) { showNotif('El ranking está vacío'); return; }
 
+      const tag    = getAffiliateTag();
+      const origin = location.origin;
+
       const lines = [
         'PRODRADAR - BRIEFING DE RANKING',
         '================================',
         `Fecha: ${new Date().toLocaleDateString('es-ES')}`,
         `Total productos: ${products.length}`,
         `Con vídeo: ${products.filter(p => p.hasVideo).length}`,
+        tag ? `Tag afiliado: ${tag}` : 'Tag afiliado: (no configurado)',
         '', 'PRODUCTOS POR POSICIÓN:', '------------------------',
       ];
       products.forEach((p, idx) => {
+        const baseUrl      = `${origin}/dp/${p.asin}`;
+        const affiliateUrl = tag ? `${baseUrl}/?tag=${tag}` : baseUrl;
         lines.push(`\n#${idx + 1} — ${p.title}`);
-        lines.push(`   ASIN:    ${p.asin}`);
-        lines.push(`   Precio:  ${p.price || 'N/D'}`);
-        lines.push(`   Vídeo:   ${p.hasVideo ? 'SÍ ▶' : 'NO'}`);
-        lines.push(`   Imagen:  ${p.imageUrl}`);
-        lines.push(`   URL:     https://www.amazon.es/dp/${p.asin}`);
+        lines.push(`   ASIN:      ${p.asin}`);
+        lines.push(`   Precio:    ${p.price || 'N/D'}`);
+        lines.push(`   Vídeo:     ${p.hasVideo ? 'SÍ ▶' : 'NO'}`);
+        lines.push(`   Imagen:    ${p.imageUrl}`);
+        lines.push(`   URL:       ${baseUrl}`);
+        lines.push(`   Afiliado:  ${affiliateUrl}`);
       });
 
       const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });

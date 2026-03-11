@@ -144,6 +144,45 @@ async function fetchVideoUrls(asin, pageUrl) {
   return matches.map(match => match[1]);
 }
 
+// Escanea TODOS los script blocks de la página buscando vídeos VSE.
+// Devuelve [{url, title, creator}] — incluye vídeos del vendedor y relacionados.
+async function fetchAllVseVideos(pageUrl) {
+  const res = await fetch(pageUrl, {
+    credentials: 'include',
+    headers: { 'Accept': 'text/html' }
+  });
+  if (!res.ok) return [];
+  const html = await res.text();
+
+  const results = [];
+  const seen    = new Set();
+  const urlRe   = /"url"\s*:\s*"(https:\/\/[^"]*vse-vms-transcoding-artifact[^"]*\.m3u8)"/g;
+
+  // Iterar sobre todos los bloques <script>
+  const scriptRe = /<script[^>]*>([\s\S]*?)<\/script>/gi;
+  for (const scriptMatch of html.matchAll(scriptRe)) {
+    const block = scriptMatch[1];
+    for (const urlMatch of block.matchAll(urlRe)) {
+      const url = urlMatch[1];
+      if (seen.has(url)) continue;
+      seen.add(url);
+
+      // Extraer título y creador del contexto JSON cercano (±600 chars)
+      const ctx     = block.slice(Math.max(0, urlMatch.index - 600), urlMatch.index + 200);
+      const titleM  = ctx.match(/"(?:title|videoTitle|name)"\s*:\s*"([^"]{3,120})"/);
+      const creatorM = ctx.match(/"(?:creatorName|channelName|author)"\s*:\s*"([^"]{2,60})"/);
+
+      results.push({
+        url,
+        title:   titleM?.[1]   || '',
+        creator: creatorM?.[1] || '',
+      });
+    }
+  }
+
+  return results;
+}
+
 // ── LISTENER DE MENSAJES ──────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -198,6 +237,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ success: true, count: downloadIds.length, downloadIds });
       } catch (err) {
         sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  // ── Obtener TODOS los vídeos de una página de producto (popup) ────────────
+  if (msg.action === 'getAllVideos') {
+    const { pageUrl } = msg;
+    (async () => {
+      try {
+        const videos = await fetchAllVseVideos(pageUrl);
+        sendResponse({ success: true, videos });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message, videos: [] });
       }
     })();
     return true;

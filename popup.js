@@ -81,7 +81,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     const safeTitle = productTitle
-      ? productTitle.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 80)
+      ? productTitle.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7E]/g, '').replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 80) || 'amazon-video'
       : 'amazon-video';
 
     content.innerHTML = `<div class="video-count">✅ ${videos.length} vídeo${videos.length > 1 ? 's' : ''} encontrado${videos.length > 1 ? 's' : ''}:</div>`;
@@ -90,7 +90,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const suffix   = videos.length > 1 ? `-${index + 1}` : '';
       // Usar el título del vídeo si existe, si no el del producto
       const vidSafeTitle = video.title
-        ? video.title.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 80)
+        ? video.title.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7E]/g, '').replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 80) || safeTitle
         : safeTitle;
       const filename = `${vidSafeTitle}${suffix}.mp4`;
 

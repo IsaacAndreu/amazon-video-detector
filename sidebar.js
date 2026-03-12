@@ -752,7 +752,7 @@
       products.forEach((p, idx) => {
         const pos       = String(idx + 1).padStart(2, '0');
         const safeTitle = (p.title || 'producto')
-          .replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);
+          .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7E]/g, '').replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60) || 'producto';
         const folder    = `${root}/${pos}_${p.asin}`;
 
         // Imagen del producto (versión a máxima resolución)

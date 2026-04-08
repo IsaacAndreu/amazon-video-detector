@@ -1,2 +1,28 @@
+# Local tooling
 .claude/
-*.py
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Python helpers
+__pycache__/
+*.pyc
+
+# Node / package managers
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Build / archive artifacts
+*.zip
+*.crx
+*.pem

@@ -277,7 +277,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const { pageUrl } = msg;
     (async () => {
       try {
-        const asin = pageUrl.match(/\/dp\/([A-Z0-9]{10})/i)?.[1];
+        const asin = pageUrl.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1];
         if (!asin) { sendResponse({ success: true, videos: [] }); return; }
 
         // Fetch único compartido por ambos pasos

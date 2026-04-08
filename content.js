@@ -86,8 +86,8 @@ function detectVideoInHtml(html, asin) {
 // detectVideoInCurrentPageDOM — inspección directa del DOM en la página actual.
 // Usa el mismo enfoque anclado al ASIN, pero con datos del DOM en vivo.
 function detectVideoInCurrentPageDOM() {
-  // Extraer el ASIN de la URL actual (ej. /dp/B06X9NQ8GX/)
-  const asin = location.pathname.match(/\/dp\/([A-Z0-9]{10})/i)?.[1];
+  // Extraer el ASIN de la URL actual (ej. /dp/B06X9NQ8GX/ o /gp/product/B06X9NQ8GX/)
+  const asin = location.pathname.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1];
 
   // 1. Buscar en scripts que contengan mediaAsin o pageAsin del producto.
   //    - mediaAsin → scripts estáticos del ImageBlock/VSE (HTML inicial)
@@ -337,7 +337,7 @@ function processProducts() {
 // ── PÁGINA DE PRODUCTO INDIVIDUAL ────────────────────────────────────────────
 
 function processProductPage() {
-  if (!location.pathname.includes('/dp/')) return;
+  if (!/\/(?:dp|gp\/product)\//.test(location.pathname)) return;
 
   const mainImgWrapper =
     document.querySelector('#imgTagWrapperId') ||

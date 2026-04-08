@@ -2,13 +2,26 @@ document.addEventListener('DOMContentLoaded', async () => {
   const content = document.getElementById('content');
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const supportedHosts = new Set([
+    'www.amazon.com',
+    'www.amazon.es',
+    'www.amazon.co.uk',
+    'www.amazon.com.mx',
+    'www.amazon.de',
+    'www.amazon.fr',
+    'www.amazon.it'
+  ]);
 
-  const isAmazon = tab.url && (
-    tab.url.includes('amazon.com') ||
-    tab.url.includes('amazon.es') ||
-    tab.url.includes('amazon.co.uk') ||
-    tab.url.includes('amazon.com.mx')
-  );
+  let pageUrl = '';
+  let isAmazon = false;
+  let isProductPage = false;
+
+  try {
+    pageUrl = tab?.url || '';
+    const url = new URL(pageUrl);
+    isAmazon = supportedHosts.has(url.hostname);
+    isProductPage = /\/(?:dp|gp\/product)\//.test(url.pathname);
+  } catch (_) {}
 
   if (!isAmazon) {
     content.innerHTML = `
@@ -19,7 +32,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
-  const isProductPage = tab.url.includes('/dp/');
 
   if (!isProductPage) {
     content.innerHTML = `
@@ -56,7 +68,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   } catch (_) {}
 
   // Obtener TODOS los vídeos (vendedor + relacionados) via fetch de la página
-  chrome.runtime.sendMessage({ action: 'getAllVideos', pageUrl: tab.url }, (response) => {
+  chrome.runtime.sendMessage({ action: 'getAllVideos', pageUrl }, (response) => {
     if (chrome.runtime.lastError || !response?.success) {
       content.innerHTML = `
         <div class="no-videos">

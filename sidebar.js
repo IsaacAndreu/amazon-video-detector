@@ -1,443 +1,408 @@
-// =====================================================
-//  PRODRADAR - Sidebar de Ranking
-//  Panel lateral inyectado en páginas de Amazon
-// =====================================================
-
-(function () {
+﻿(function () {
   'use strict';
 
-  const STORAGE_KEY = 'prodradar_ranking';
-  const ROOT_ID     = 'pr-root';
+  const STORAGE_KEYS = {
+    ranking: 'prodradar_ranking',
+    settings: 'prodradar_settings'
+  };
 
-  // ── ESTILOS (todos con !important para no ser sobreescritos por Amazon) ──────
+  const ROOT_ID = 'pr-root';
+  const DEFAULT_SETTINGS = {
+    folderName: 'ranking',
+    affiliateTag: '',
+    autoOpenPanel: true,
+    filterMode: 'all',
+    sortMode: 'manual',
+    searchQuery: '',
+    downloadImages: true,
+    downloadVideos: true,
+    includeRelatedVideos: false
+  };
+
+  let state = {
+    products: [],
+    settings: { ...DEFAULT_SETTINGS },
+    bulk: {
+      jobId: '',
+      total: 0,
+      completed: 0,
+      failed: 0,
+      message: '',
+      active: false,
+      itemStates: {}
+    }
+  };
 
   const CSS = `
-    /* ---- Toggle lateral ---- */
+    #pr-root, #pr-root * { box-sizing: border-box !important; }
+    #pr-root {
+      font-family: Arial, sans-serif !important;
+      color: #1e2a32 !important;
+    }
     #pr-toggle {
       position: fixed !important;
-      right: 0 !important;
       top: 50% !important;
+      right: 0 !important;
       transform: translateY(-50%) !important;
       z-index: 2147483646 !important;
-      background: #131921 !important;
-      color: white !important;
+      padding: 14px 8px !important;
+      border: 0 !important;
+      border-radius: 12px 0 0 12px !important;
+      background: linear-gradient(180deg, #d86a1c 0%, #a94f11 100%) !important;
+      color: #fff !important;
+      cursor: pointer !important;
       writing-mode: vertical-rl !important;
       text-orientation: mixed !important;
-      padding: 14px 8px !important;
-      border-radius: 10px 0 0 10px !important;
-      cursor: pointer !important;
-      font-family: Arial, sans-serif !important;
-      font-size: 12px !important;
-      font-weight: bold !important;
-      letter-spacing: 1px !important;
-      box-shadow: -2px 0 10px rgba(0,0,0,0.3) !important;
-      transition: background 0.2s !important;
+      letter-spacing: 0.08em !important;
+      font-size: 11px !important;
+      font-weight: 700 !important;
+      box-shadow: -4px 0 16px rgba(30, 42, 50, 0.2) !important;
       user-select: none !important;
-      line-height: 1 !important;
-      border: none !important;
-      margin: 0 !important;
     }
-    #pr-toggle:hover { background: #ff6b00 !important; }
-
     #pr-dot {
-      display: inline-block !important;
-      background: #ff6b00 !important;
-      color: white !important;
-      border-radius: 50% !important;
-      width: 18px !important;
-      height: 18px !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      width: 20px !important;
+      height: 20px !important;
+      margin-bottom: 8px !important;
+      border-radius: 999px !important;
+      background: rgba(255,255,255,0.18) !important;
+      color: #fff !important;
       font-size: 10px !important;
-      line-height: 18px !important;
-      text-align: center !important;
       writing-mode: horizontal-tb !important;
-      margin-bottom: 6px !important;
     }
-
-    /* ---- Panel principal ---- */
     #pr-panel {
       position: fixed !important;
       top: 0 !important;
-      right: -380px !important;
-      width: 360px !important;
+      right: -430px !important;
+      width: 410px !important;
+      max-width: calc(100vw - 18px) !important;
       height: 100vh !important;
       z-index: 2147483645 !important;
-      background: #f0f2f5 !important;
-      box-shadow: -4px 0 20px rgba(0,0,0,0.25) !important;
       display: flex !important;
       flex-direction: column !important;
-      font-family: Arial, sans-serif !important;
-      transition: right 0.3s ease !important;
-      overflow: hidden !important;
-      box-sizing: border-box !important;
-      margin: 0 !important;
-      padding: 0 !important;
-      border: none !important;
+      background: linear-gradient(180deg, #f7f2ea 0%, #efe8dc 100%) !important;
+      border-left: 1px solid rgba(30, 42, 50, 0.08) !important;
+      box-shadow: -10px 0 24px rgba(30, 42, 50, 0.16) !important;
+      transition: right 0.28s ease !important;
     }
     #pr-panel.pr-open { right: 0 !important; }
-
-    /* ---- Header ---- */
-    #pr-panel-header {
-      background: #131921 !important;
-      color: white !important;
-      padding: 14px 16px !important;
+    #pr-header {
+      padding: 16px !important;
+      border-bottom: 1px solid rgba(30, 42, 50, 0.08) !important;
+      background: rgba(255,255,255,0.72) !important;
+      backdrop-filter: blur(6px) !important;
+    }
+    #pr-header-top {
       display: flex !important;
-      flex-direction: row !important;
-      align-items: center !important;
+      align-items: flex-start !important;
       gap: 10px !important;
-      flex-shrink: 0 !important;
-      box-sizing: border-box !important;
     }
-    #pr-panel-header h3 {
-      font-size: 15px !important;
-      font-weight: bold !important;
-      flex: 1 !important;
+    #pr-title-wrap { flex: 1 !important; }
+    #pr-kicker {
+      display: inline-flex !important;
+      padding: 3px 8px !important;
+      border-radius: 999px !important;
+      background: #f3e5d3 !important;
+      color: #a94f11 !important;
+      font-size: 10px !important;
+      font-weight: 700 !important;
+      text-transform: uppercase !important;
+      letter-spacing: 0.08em !important;
+      margin-bottom: 8px !important;
+    }
+    #pr-title {
+      font-family: Georgia, 'Times New Roman', serif !important;
+      font-size: 22px !important;
+      line-height: 1 !important;
       margin: 0 !important;
-      padding: 0 !important;
-      color: white !important;
-      font-family: Arial, sans-serif !important;
+      color: #1e2a32 !important;
     }
-    #pr-count-badge {
-      background: #ff6b00 !important;
-      color: white !important;
-      border-radius: 12px !important;
-      padding: 2px 9px !important;
-      font-size: 11px !important;
-      font-weight: bold !important;
-      font-family: Arial, sans-serif !important;
+    #pr-subtitle {
+      margin-top: 6px !important;
+      font-size: 12px !important;
+      line-height: 1.5 !important;
+      color: #61707a !important;
     }
     #pr-close-btn {
-      background: transparent !important;
-      border: none !important;
-      color: rgba(255,255,255,0.7) !important;
-      font-size: 18px !important;
-      cursor: pointer !important;
-      padding: 0 4px !important;
-      line-height: 1 !important;
-      display: inline-block !important;
-      visibility: visible !important;
-      opacity: 1 !important;
-    }
-    #pr-close-btn:hover { color: white !important; }
-
-    /* ---- Stats ---- */
-    #pr-stats {
+      width: 34px !important;
+      height: 34px !important;
+      border-radius: 999px !important;
+      border: 1px solid rgba(30, 42, 50, 0.12) !important;
       background: white !important;
-      padding: 10px 16px !important;
-      font-size: 12px !important;
-      color: #555 !important;
-      border-bottom: 1px solid #e0e0e0 !important;
-      display: flex !important;
-      flex-direction: row !important;
-      gap: 16px !important;
-      flex-shrink: 0 !important;
-      box-sizing: border-box !important;
-      font-family: Arial, sans-serif !important;
+      color: #1e2a32 !important;
+      cursor: pointer !important;
+      font-size: 18px !important;
     }
-    #pr-stats strong { color: #131921 !important; }
-
-    /* ---- Lista ---- */
+    #pr-summary {
+      display: grid !important;
+      grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+      gap: 8px !important;
+      margin-top: 14px !important;
+    }
+    .pr-stat {
+      padding: 10px !important;
+      border-radius: 12px !important;
+      background: rgba(255,255,255,0.8) !important;
+      border: 1px solid rgba(30, 42, 50, 0.08) !important;
+    }
+    .pr-stat-label {
+      display: block !important;
+      font-size: 10px !important;
+      color: #61707a !important;
+      text-transform: uppercase !important;
+      letter-spacing: 0.08em !important;
+      margin-bottom: 4px !important;
+    }
+    .pr-stat-value {
+      display: block !important;
+      font-size: 18px !important;
+      font-weight: 700 !important;
+      color: #1e2a32 !important;
+    }
+    #pr-toolbar {
+      display: grid !important;
+      grid-template-columns: 1fr 120px 120px !important;
+      gap: 8px !important;
+      padding: 12px 16px !important;
+      border-bottom: 1px solid rgba(30, 42, 50, 0.08) !important;
+      background: rgba(255,255,255,0.58) !important;
+    }
+    .pr-input, .pr-select {
+      width: 100% !important;
+      min-width: 0 !important;
+      padding: 9px 10px !important;
+      border-radius: 10px !important;
+      border: 1px solid rgba(30, 42, 50, 0.14) !important;
+      background: white !important;
+      color: #1e2a32 !important;
+      font-size: 12px !important;
+      outline: none !important;
+    }
+    .pr-input:focus, .pr-select:focus {
+      border-color: #d86a1c !important;
+      box-shadow: 0 0 0 3px rgba(216,106,28,0.12) !important;
+    }
+    #pr-status {
+      margin: 0 16px 12px !important;
+      padding: 10px 12px !important;
+      border-radius: 12px !important;
+      background: rgba(255,255,255,0.72) !important;
+      border: 1px solid rgba(30, 42, 50, 0.08) !important;
+      font-size: 12px !important;
+      color: #44515a !important;
+      line-height: 1.5 !important;
+    }
     #pr-list {
       flex: 1 !important;
       overflow-y: auto !important;
-      overflow-x: hidden !important;
-      padding: 10px !important;
-      box-sizing: border-box !important;
-      min-height: 0 !important;
+      padding: 0 16px 16px !important;
     }
-    #pr-list::-webkit-scrollbar { width: 6px !important; }
-    #pr-list::-webkit-scrollbar-thumb { background: #ccc !important; border-radius: 3px !important; }
-
+    #pr-list::-webkit-scrollbar { width: 8px !important; }
+    #pr-list::-webkit-scrollbar-thumb {
+      background: rgba(30, 42, 50, 0.18) !important;
+      border-radius: 999px !important;
+    }
     .pr-empty {
+      margin-top: 8px !important;
+      padding: 26px 18px !important;
+      border-radius: 16px !important;
+      border: 1px dashed rgba(30, 42, 50, 0.18) !important;
+      background: rgba(255,255,255,0.52) !important;
       text-align: center !important;
-      color: #aaa !important;
-      padding: 40px 20px !important;
       font-size: 13px !important;
+      color: #61707a !important;
       line-height: 1.7 !important;
-      font-family: Arial, sans-serif !important;
     }
-    .pr-empty-icon {
-      font-size: 36px !important;
-      display: block !important;
-      margin-bottom: 10px !important;
-    }
-
-    /* ---- Items del ranking ---- */
     .pr-item {
-      background: white !important;
-      border: 1px solid #dde1e7 !important;
-      border-radius: 10px !important;
-      padding: 10px !important;
-      margin-bottom: 8px !important;
       display: flex !important;
-      flex-direction: row !important;
-      align-items: center !important;
       gap: 10px !important;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.06) !important;
-      box-sizing: border-box !important;
-      cursor: grab !important;
+      align-items: flex-start !important;
+      padding: 12px !important;
+      margin-bottom: 10px !important;
+      border-radius: 16px !important;
+      background: white !important;
+      border: 1px solid rgba(30, 42, 50, 0.08) !important;
+      box-shadow: 0 8px 18px rgba(30, 42, 50, 0.06) !important;
     }
-    .pr-item:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.12) !important; }
-    .pr-item.pr-dragging { opacity: 0.5 !important; border: 2px dashed #ff6b00 !important; }
-
+    .pr-item.pr-draggable { cursor: grab !important; }
+    .pr-item.pr-dragging {
+      opacity: 0.55 !important;
+      border-style: dashed !important;
+      border-color: #d86a1c !important;
+    }
     .pr-pos {
-      min-width: 24px !important;
-      max-width: 24px !important;
-      height: 24px !important;
-      background: #131921 !important;
+      flex: 0 0 28px !important;
+      width: 28px !important;
+      height: 28px !important;
+      border-radius: 999px !important;
+      background: #1e2a32 !important;
       color: white !important;
-      border-radius: 50% !important;
-      display: flex !important;
+      display: inline-flex !important;
       align-items: center !important;
       justify-content: center !important;
       font-size: 11px !important;
-      font-weight: bold !important;
-      flex-shrink: 0 !important;
-      font-family: Arial, sans-serif !important;
+      font-weight: 700 !important;
+      margin-top: 2px !important;
     }
     .pr-thumb {
-      width: 52px !important;
-      height: 52px !important;
+      width: 58px !important;
+      height: 58px !important;
+      border-radius: 10px !important;
       object-fit: contain !important;
-      border-radius: 6px !important;
-      background: #f8f8f8 !important;
-      border: 1px solid #eee !important;
-      flex-shrink: 0 !important;
+      background: #f6f3ee !important;
+      border: 1px solid rgba(30, 42, 50, 0.08) !important;
+      flex: 0 0 58px !important;
     }
     .pr-info {
-      flex: 1 !important;
       min-width: 0 !important;
-      overflow: hidden !important;
+      flex: 1 !important;
     }
     .pr-title {
-      font-size: 11px !important;
-      color: #232f3e !important;
-      line-height: 1.4 !important;
+      font-size: 12px !important;
+      line-height: 1.45 !important;
+      color: #1e2a32 !important;
+      margin-bottom: 6px !important;
       display: -webkit-box !important;
       -webkit-line-clamp: 2 !important;
       -webkit-box-orient: vertical !important;
       overflow: hidden !important;
-      margin-bottom: 4px !important;
-      font-family: Arial, sans-serif !important;
     }
     .pr-meta {
       display: flex !important;
-      flex-direction: row !important;
-      gap: 6px !important;
-      align-items: center !important;
       flex-wrap: wrap !important;
+      gap: 6px !important;
+      margin-bottom: 6px !important;
     }
-    .pr-video-tag {
-      background: #1a7f37 !important;
-      color: white !important;
-      font-size: 9px !important;
-      font-weight: bold !important;
-      padding: 1px 6px !important;
-      border-radius: 8px !important;
-      font-family: Arial, sans-serif !important;
-      display: inline-block !important;
+    .pr-chip {
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 4px !important;
+      padding: 3px 8px !important;
+      border-radius: 999px !important;
+      background: #f2ebdf !important;
+      color: #5d6870 !important;
+      font-size: 10px !important;
+      font-weight: 700 !important;
+      text-transform: uppercase !important;
+      letter-spacing: 0.04em !important;
     }
-    .pr-no-video-tag {
-      background: #888 !important;
-      color: white !important;
-      font-size: 9px !important;
-      font-weight: bold !important;
-      padding: 1px 6px !important;
-      border-radius: 8px !important;
-      font-family: Arial, sans-serif !important;
-      display: inline-block !important;
+    .pr-chip.video {
+      background: #eaf4ed !important;
+      color: #1f7a3f !important;
     }
     .pr-price {
+      font-size: 12px !important;
+      font-weight: 700 !important;
+      color: #b24c12 !important;
+    }
+    .pr-link {
       font-size: 11px !important;
-      color: #B12704 !important;
-      font-weight: bold !important;
-      font-family: Arial, sans-serif !important;
+      color: #61707a !important;
+      text-decoration: none !important;
     }
-    .pr-asin {
-      font-size: 9px !important;
-      color: #aaa !important;
-      font-family: monospace !important;
-    }
+    .pr-link:hover { color: #a94f11 !important; }
     .pr-actions {
       display: flex !important;
       flex-direction: column !important;
-      gap: 3px !important;
-      flex-shrink: 0 !important;
+      gap: 6px !important;
     }
-    .pr-action-btn {
-      background: #f0f2f5 !important;
-      border: 1px solid #dde1e7 !important;
-      border-radius: 5px !important;
-      width: 24px !important;
-      height: 24px !important;
-      min-width: 24px !important;
-      min-height: 24px !important;
+    .pr-btn {
+      width: 28px !important;
+      height: 28px !important;
+      border-radius: 10px !important;
+      border: 1px solid rgba(30, 42, 50, 0.1) !important;
+      background: #f8f4ec !important;
+      color: #1e2a32 !important;
       cursor: pointer !important;
-      font-size: 10px !important;
-      display: flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-      padding: 0 !important;
-      line-height: 1 !important;
-      visibility: visible !important;
-      opacity: 1 !important;
-      color: #333 !important;
-      text-decoration: none !important;
+      font-size: 12px !important;
+      font-weight: 700 !important;
     }
-    .pr-action-btn:hover { background: #e0e0e0 !important; }
-    .pr-action-btn.pr-remove:hover {
-      background: #ffebee !important;
-      color: #c62828 !important;
-      border-color: #ffcdd2 !important;
-    }
-    .pr-action-btn.pr-copy-link:hover {
-      background: #e8f5e9 !important;
-      color: #2e7d32 !important;
-      border-color: #a5d6a7 !important;
-    }
-    .pr-action-btn.pr-copy-link.pr-copied {
-      background: #2e7d32 !important;
-      color: white !important;
-      border-color: #2e7d32 !important;
-    }
-
-    /* ---- FOOTER con los 3 botones ---- */
+    .pr-btn:hover { border-color: #d86a1c !important; color: #a94f11 !important; }
     #pr-footer {
-      background: white !important;
-      border-top: 1px solid #e0e0e0 !important;
-      padding: 12px !important;
-      display: flex !important;
-      flex-direction: column !important;
+      padding: 16px !important;
+      border-top: 1px solid rgba(30, 42, 50, 0.08) !important;
+      background: rgba(255,255,255,0.72) !important;
+    }
+    #pr-settings {
+      display: grid !important;
+      grid-template-columns: 1fr 1fr !important;
       gap: 8px !important;
-      flex-shrink: 0 !important;
-      box-sizing: border-box !important;
-      visibility: visible !important;
-      overflow: visible !important;
+      margin-bottom: 10px !important;
     }
-    #pr-folder-row {
+    .pr-setting-full { grid-column: 1 / -1 !important; }
+    .pr-field-label {
+      display: block !important;
+      margin-bottom: 5px !important;
+      font-size: 10px !important;
+      color: #61707a !important;
+      text-transform: uppercase !important;
+      letter-spacing: 0.08em !important;
+    }
+    .pr-check-grid {
+      display: grid !important;
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      gap: 8px !important;
+      margin-bottom: 12px !important;
+    }
+    .pr-check {
       display: flex !important;
       align-items: center !important;
-      gap: 6px !important;
-      width: 100% !important;
-      box-sizing: border-box !important;
-    }
-    #pr-folder-label {
-      font-size: 11px !important;
-      color: #555 !important;
-      white-space: nowrap !important;
-      font-family: Arial, sans-serif !important;
-      flex-shrink: 0 !important;
-    }
-    #pr-folder-input {
-      flex: 1 !important;
+      gap: 8px !important;
+      padding: 8px 10px !important;
+      border-radius: 12px !important;
+      background: #f7f2ea !important;
+      border: 1px solid rgba(30, 42, 50, 0.08) !important;
       font-size: 12px !important;
-      font-family: Arial, sans-serif !important;
-      padding: 5px 8px !important;
-      border: 1px solid #dde1e7 !important;
-      border-radius: 6px !important;
-      background: #f8f9fa !important;
-      color: #232f3e !important;
-      box-sizing: border-box !important;
-      min-width: 0 !important;
-      outline: none !important;
+      color: #44515a !important;
     }
-    #pr-folder-input:focus {
-      border-color: #ff6b00 !important;
-      background: white !important;
+    .pr-check input { accent-color: #d86a1c !important; }
+    .pr-button-row {
+      display: grid !important;
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      gap: 8px !important;
+      margin-bottom: 8px !important;
     }
-    #pr-tag-row {
-      display: flex !important;
-      align-items: center !important;
-      gap: 6px !important;
+    .pr-primary,
+    .pr-secondary,
+    .pr-ghost {
       width: 100% !important;
-      box-sizing: border-box !important;
-    }
-    #pr-tag-label {
-      font-size: 11px !important;
-      color: #555 !important;
-      white-space: nowrap !important;
-      font-family: Arial, sans-serif !important;
-      flex-shrink: 0 !important;
-    }
-    #pr-tag-input {
-      flex: 1 !important;
-      font-size: 12px !important;
-      font-family: monospace !important;
-      padding: 5px 8px !important;
-      border: 1px solid #dde1e7 !important;
-      border-radius: 6px !important;
-      background: #f8f9fa !important;
-      color: #232f3e !important;
-      box-sizing: border-box !important;
-      min-width: 0 !important;
-      outline: none !important;
-    }
-    #pr-tag-input:focus {
-      border-color: #ff6b00 !important;
-      background: white !important;
-    }
-    /* Botones del footer como divs para evitar conflictos con CSS de Amazon */
-    .pr-footer-btn {
-      display: flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-      width: 100% !important;
-      padding: 9px 12px !important;
-      border-radius: 8px !important;
-      font-size: 13px !important;
-      font-weight: bold !important;
+      border-radius: 12px !important;
+      border: 0 !important;
+      padding: 10px 12px !important;
       cursor: pointer !important;
-      box-sizing: border-box !important;
-      font-family: Arial, sans-serif !important;
-      border: none !important;
-      text-align: center !important;
-      line-height: 1.4 !important;
-      visibility: visible !important;
-      opacity: 1 !important;
-      pointer-events: auto !important;
-      user-select: none !important;
-      min-height: 36px !important;
-      text-decoration: none !important;
+      font-size: 12px !important;
+      font-weight: 700 !important;
     }
-    #pr-btn-download {
-      background: #ff6b00 !important;
+    .pr-primary {
+      background: linear-gradient(180deg, #d86a1c 0%, #a94f11 100%) !important;
       color: white !important;
     }
-    #pr-btn-download:hover { background: #e05a00 !important; }
-    #pr-btn-export {
-      background: #232f3e !important;
+    .pr-secondary {
+      background: #1e2a32 !important;
       color: white !important;
     }
-    #pr-btn-export:hover { background: #131921 !important; }
-    #pr-btn-clear {
-      background: #f5f5f5 !important;
-      color: #888 !important;
-      border: 1px solid #ddd !important;
+    .pr-ghost {
+      background: #f8f4ec !important;
+      color: #44515a !important;
+      border: 1px solid rgba(30, 42, 50, 0.1) !important;
     }
-    #pr-btn-clear:hover {
-      background: #ffebee !important;
-      color: #c62828 !important;
-      border-color: #ffcdd2 !important;
-    }
-
-    /* ---- Notificación ---- */
     #pr-notification {
       position: fixed !important;
-      bottom: 24px !important;
-      right: 24px !important;
+      right: 20px !important;
+      bottom: 20px !important;
       z-index: 2147483647 !important;
-      background: #131921 !important;
+      padding: 10px 14px !important;
+      border-radius: 999px !important;
+      background: #1e2a32 !important;
       color: white !important;
-      padding: 9px 16px !important;
-      border-radius: 20px !important;
-      font-family: Arial, sans-serif !important;
-      font-size: 12px !important;
-      font-weight: bold !important;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.3) !important;
       opacity: 0 !important;
       transform: translateY(8px) !important;
-      transition: opacity 0.25s, transform 0.25s !important;
+      transition: opacity 0.2s ease, transform 0.2s ease !important;
       pointer-events: none !important;
-      visibility: visible !important;
+      font-size: 12px !important;
+      box-shadow: 0 10px 20px rgba(30, 42, 50, 0.22) !important;
     }
     #pr-notification.pr-show {
       opacity: 1 !important;
@@ -445,415 +410,617 @@
     }
   `;
 
-  // ── CREAR DOM ─────────────────────────────────────────────────────────────────
-
-  function init() {
+  function createRoot() {
     if (document.getElementById(ROOT_ID)) return;
 
     const root = document.createElement('div');
     root.id = ROOT_ID;
-
-    const style = document.createElement('style');
-    style.textContent = CSS;
-    root.appendChild(style);
-
-    // Toggle lateral
-    const toggle = document.createElement('div');
-    toggle.id = 'pr-toggle';
-    toggle.innerHTML = '<span id="pr-dot">0</span>📊 RANKING';
-    root.appendChild(toggle);
-
-    // Panel
-    const panel = document.createElement('div');
-    panel.id = 'pr-panel';
-    panel.innerHTML = `
-      <div id="pr-panel-header">
-        <h3>📊 Ranking</h3>
-        <span id="pr-count-badge">0</span>
-        <button id="pr-close-btn">✕</button>
-      </div>
-      <div id="pr-stats">
-        <span>Productos: <strong id="pr-stat-total">0</strong></span>
-        <span>Con vídeo: <strong id="pr-stat-video">0</strong></span>
-      </div>
-      <div id="pr-list"></div>
-      <div id="pr-footer">
-        <div id="pr-folder-row">
-          <span id="pr-folder-label">📁 Carpeta:</span>
-          <input id="pr-folder-input" type="text" placeholder="nombre-del-proyecto" spellcheck="false">
+    root.innerHTML = `
+      <style>${CSS}</style>
+      <div id="pr-toggle"><span id="pr-dot">0</span> PRODRADAR</div>
+      <aside id="pr-panel">
+        <div id="pr-header">
+          <div id="pr-header-top">
+            <div id="pr-title-wrap">
+              <span id="pr-kicker">ProdRadar</span>
+              <h2 id="pr-title">Ranking board</h2>
+              <div id="pr-subtitle">Filtra, ordena, exporta y descarga assets sin salir de Amazon.</div>
+            </div>
+            <button id="pr-close-btn" type="button" aria-label="Cerrar">x</button>
+          </div>
+          <div id="pr-summary">
+            <div class="pr-stat">
+              <span class="pr-stat-label">Total</span>
+              <span class="pr-stat-value" id="pr-stat-total">0</span>
+            </div>
+            <div class="pr-stat">
+              <span class="pr-stat-label">Con video</span>
+              <span class="pr-stat-value" id="pr-stat-video">0</span>
+            </div>
+            <div class="pr-stat">
+              <span class="pr-stat-label">Visibles</span>
+              <span class="pr-stat-value" id="pr-stat-visible">0</span>
+            </div>
+          </div>
         </div>
-        <div id="pr-tag-row">
-          <span id="pr-tag-label">🔗 Tag afil.:</span>
-          <input id="pr-tag-input" type="text" placeholder="tu-tag-21" spellcheck="false">
+        <div id="pr-toolbar">
+          <input id="pr-search" class="pr-input" type="search" placeholder="Buscar por titulo o ASIN">
+          <select id="pr-filter" class="pr-select">
+            <option value="all">Todos</option>
+            <option value="video">Solo video</option>
+            <option value="no-video">Sin video</option>
+          </select>
+          <select id="pr-sort" class="pr-select">
+            <option value="manual">Orden manual</option>
+            <option value="recent">Mas recientes</option>
+            <option value="title">Titulo A-Z</option>
+            <option value="price-desc">Precio alto</option>
+            <option value="price-asc">Precio bajo</option>
+          </select>
         </div>
-        <div class="pr-footer-btn" id="pr-btn-download" role="button" tabindex="0">⬇️ Descargar todos los assets</div>
-        <div class="pr-footer-btn" id="pr-btn-export"   role="button" tabindex="0">📋 Exportar briefing</div>
-        <div class="pr-footer-btn" id="pr-btn-clear"    role="button" tabindex="0">🗑️ Limpiar ranking</div>
-      </div>
+        <div id="pr-status">Listo para capturar productos.</div>
+        <div id="pr-list"></div>
+        <div id="pr-footer">
+          <div id="pr-settings">
+            <div>
+              <label class="pr-field-label" for="pr-folder-input">Carpeta</label>
+              <input id="pr-folder-input" class="pr-input" type="text" placeholder="nombre-del-proyecto" spellcheck="false">
+            </div>
+            <div>
+              <label class="pr-field-label" for="pr-tag-input">Tag afiliado</label>
+              <input id="pr-tag-input" class="pr-input" type="text" placeholder="mitag-21" spellcheck="false">
+            </div>
+            <div class="pr-setting-full pr-check-grid">
+              <label class="pr-check"><input id="pr-check-images" type="checkbox"> Descargar imagenes</label>
+              <label class="pr-check"><input id="pr-check-videos" type="checkbox"> Descargar videos</label>
+              <label class="pr-check"><input id="pr-check-related" type="checkbox"> Incluir relacionados</label>
+              <label class="pr-check"><input id="pr-check-open" type="checkbox"> Auto abrir panel</label>
+            </div>
+          </div>
+          <div class="pr-button-row">
+            <button id="pr-btn-download" class="pr-primary" type="button">Descargar assets</button>
+            <button id="pr-btn-briefing" class="pr-secondary" type="button">Export TXT</button>
+          </div>
+          <div class="pr-button-row">
+            <button id="pr-btn-csv" class="pr-ghost" type="button">Export CSV</button>
+            <button id="pr-btn-json" class="pr-ghost" type="button">Export JSON</button>
+          </div>
+          <button id="pr-btn-clear" class="pr-ghost" type="button">Vaciar ranking</button>
+        </div>
+      </aside>
+      <div id="pr-notification"></div>
     `;
-    root.appendChild(panel);
-
-    // Notificación flotante
-    const notif = document.createElement('div');
-    notif.id = 'pr-notification';
-    root.appendChild(notif);
 
     document.body.appendChild(root);
-    bindEvents();
-    loadAndRender();
-    loadAffiliateTag();
   }
 
-  // ── STORAGE ───────────────────────────────────────────────────────────────────
+  function loadStorage() {
+    chrome.storage.local.get([STORAGE_KEYS.ranking, STORAGE_KEYS.settings], result => {
+      state.products = result[STORAGE_KEYS.ranking] || [];
+      state.settings = { ...DEFAULT_SETTINGS, ...(result[STORAGE_KEYS.settings] || {}) };
+      hydrateInputs();
+      render();
+    });
+  }
 
   function saveRanking(products) {
-    chrome.storage.local.set({ [STORAGE_KEY]: products });
+    state.products = products;
+    chrome.storage.local.set({ [STORAGE_KEYS.ranking]: products });
   }
 
-  function loadRanking(callback) {
-    chrome.storage.local.get([STORAGE_KEY], result => {
-      callback(result[STORAGE_KEY] || []);
-    });
+  function saveSettings(patch) {
+    state.settings = { ...state.settings, ...patch };
+    chrome.storage.local.set({ [STORAGE_KEYS.settings]: state.settings });
   }
 
-  function loadAffiliateTag() {
-    chrome.storage.local.get(['prodradar_affiliate_tag'], result => {
-      const tag = result['prodradar_affiliate_tag'] || '';
-      const input = document.getElementById('pr-tag-input');
-      if (input && tag) input.value = tag;
-    });
+  function hydrateInputs() {
+    document.getElementById('pr-folder-input').value = state.settings.folderName;
+    document.getElementById('pr-tag-input').value = state.settings.affiliateTag;
+    document.getElementById('pr-search').value = state.settings.searchQuery;
+    document.getElementById('pr-filter').value = state.settings.filterMode;
+    document.getElementById('pr-sort').value = state.settings.sortMode;
+    document.getElementById('pr-check-images').checked = state.settings.downloadImages;
+    document.getElementById('pr-check-videos').checked = state.settings.downloadVideos;
+    document.getElementById('pr-check-related').checked = state.settings.includeRelatedVideos;
+    document.getElementById('pr-check-open').checked = state.settings.autoOpenPanel;
   }
 
-  function getAffiliateTag() {
-    const input = document.getElementById('pr-tag-input');
-    return (input?.value || '').trim();
+  function sanitizeFolderName(value) {
+    return (value || 'ranking')
+      .replace(/[\\/:*?"<>|]/g, '')
+      .replace(/\s+/g, '-')
+      .trim()
+      .slice(0, 80) || 'ranking';
   }
 
-  // ── RENDER ────────────────────────────────────────────────────────────────────
+  function sanitizeText(value, fallback = '') {
+    return (value || fallback)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^\x20-\x7E]/g, '')
+      .replace(/[\\/:*?"<>|]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  function parsePrice(price) {
+    if (!price) return Number.NaN;
+    const cleaned = price.replace(/[^0-9,.-]/g, '');
+    if (!cleaned) return Number.NaN;
 
-  function loadAndRender() {
-    loadRanking(products => render(products));
+    const commaCount = (cleaned.match(/,/g) || []).length;
+    const dotCount = (cleaned.match(/\./g) || []).length;
+    let normalized = cleaned;
+
+    if (commaCount && dotCount) {
+      normalized = cleaned.replace(/\./g, '').replace(',', '.');
+    } else if (commaCount > 1) {
+      normalized = cleaned.replace(/,/g, '');
+    } else if (commaCount === 1 && !dotCount) {
+      normalized = cleaned.replace(',', '.');
+    }
+
+    return parseFloat(normalized);
   }
 
-  function render(products) {
+  function getProductBaseUrl(asin) {
+    return `${location.origin}/dp/${asin}`;
+  }
+
+  function getAffiliateUrl(asin) {
+    const baseUrl = getProductBaseUrl(asin);
+    const tag = state.settings.affiliateTag.trim();
+    return tag ? `${baseUrl}/?tag=${encodeURIComponent(tag)}` : baseUrl;
+  }
+
+  function getVisibleProducts() {
+    const query = state.settings.searchQuery.trim().toLowerCase();
+    const filter = state.settings.filterMode;
+    const sort = state.settings.sortMode;
+
+    let items = state.products
+      .map((product, index) => ({ ...product, originalIndex: index }))
+      .filter(product => {
+        if (filter === 'video' && !product.hasVideo) return false;
+        if (filter === 'no-video' && product.hasVideo) return false;
+        if (!query) return true;
+        return `${product.title} ${product.asin}`.toLowerCase().includes(query);
+      });
+
+    if (sort === 'recent') {
+      items = items.sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+    } else if (sort === 'title') {
+      items = items.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+    } else if (sort === 'price-desc') {
+      items = items.sort((a, b) => (parsePrice(b.price) || -1) - (parsePrice(a.price) || -1));
+    } else if (sort === 'price-asc') {
+      items = items.sort((a, b) => {
+        const aValue = parsePrice(a.price);
+        const bValue = parsePrice(b.price);
+        if (Number.isNaN(aValue)) return 1;
+        if (Number.isNaN(bValue)) return -1;
+        return aValue - bValue;
+      });
+    }
+
+    return items;
+  }
+
+  function render() {
+    const visibleProducts = getVisibleProducts();
+    const total = state.products.length;
+    const withVideo = state.products.filter(product => product.hasVideo).length;
+
+    document.getElementById('pr-dot').textContent = String(total);
+    document.getElementById('pr-stat-total').textContent = String(total);
+    document.getElementById('pr-stat-video').textContent = String(withVideo);
+    document.getElementById('pr-stat-visible').textContent = String(visibleProducts.length);
+    document.getElementById('pr-status').textContent = buildStatusLine();
+
     const list = document.getElementById('pr-list');
-    if (!list) return;
-
-    const total     = products.length;
-    const withVideo = products.filter(p => p.hasVideo).length;
-
-    document.getElementById('pr-count-badge').textContent  = total;
-    document.getElementById('pr-dot').textContent          = total;
-    document.getElementById('pr-stat-total').textContent   = total;
-    document.getElementById('pr-stat-video').textContent   = withVideo;
-
-    if (total === 0) {
+    if (!visibleProducts.length) {
       list.innerHTML = `
         <div class="pr-empty">
-          <span class="pr-empty-icon">📋</span>
-          Tu ranking está vacío.<br>
-          Pasa el ratón sobre un producto<br>y pulsa <strong>＋ Ranking</strong>.
-        </div>`;
+          Tu ranking esta vacio o no coincide con los filtros activos.<br>
+          Pasa el raton por un producto y usa <strong>+ Ranking</strong> para empezar.
+        </div>
+      `;
       return;
     }
 
-    list.innerHTML = '';
+    const draggable = state.settings.sortMode === 'manual' &&
+      state.settings.filterMode === 'all' &&
+      !state.settings.searchQuery.trim();
 
-    products.forEach((p, idx) => {
-      const item = document.createElement('div');
-      item.className   = 'pr-item';
-      item.dataset.asin = p.asin;
-      item.draggable   = true;
-
-      // Construir HTML interno con createElement para mayor fiabilidad
-      item.innerHTML = `
-        <div class="pr-pos">${idx + 1}</div>
-        <img class="pr-thumb" src="${esc(p.imageUrl)}" alt="" onerror="this.style.display='none'">
+    list.innerHTML = visibleProducts.map((product, index) => `
+      <article class="pr-item ${draggable ? 'pr-draggable' : ''}" data-asin="${escapeHtml(product.asin)}" ${draggable ? 'draggable="true"' : ''}>
+        <div class="pr-pos">${index + 1}</div>
+        <img class="pr-thumb" src="${escapeHtml(product.imageUrl || '')}" alt="" onerror="this.style.display='none'">
         <div class="pr-info">
-          <div class="pr-title">${esc(p.title)}</div>
+          <div class="pr-title">${escapeHtml(product.title || 'Producto sin titulo')}</div>
           <div class="pr-meta">
-            <span class="${p.hasVideo ? 'pr-video-tag' : 'pr-no-video-tag'}">${p.hasVideo ? '▶ VIDEO' : '✕ Sin vídeo'}</span>
-            ${p.price ? `<span class="pr-price">${esc(p.price)}</span>` : ''}
-            <span class="pr-asin">${esc(p.asin)}</span>
+            <span class="pr-chip ${product.hasVideo ? 'video' : ''}">${product.hasVideo ? 'Video' : 'Sin video'}</span>
+            <span class="pr-chip">${escapeHtml(product.asin)}</span>
+            ${product.price ? `<span class="pr-chip">${escapeHtml(product.price)}</span>` : ''}
+          </div>
+          <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
+            <a class="pr-link" href="${escapeHtml(getProductBaseUrl(product.asin))}" target="_blank" rel="noreferrer">Abrir producto</a>
+            <span class="pr-price">${escapeHtml(product.price || 'Sin precio')}</span>
           </div>
         </div>
         <div class="pr-actions">
-          <div class="pr-action-btn pr-up"        role="button" tabindex="0" title="Subir">▲</div>
-          <div class="pr-action-btn pr-down"      role="button" tabindex="0" title="Bajar">▼</div>
-          <div class="pr-action-btn pr-copy-link" role="button" tabindex="0" title="Copiar enlace afiliado">🔗</div>
-          <div class="pr-action-btn pr-remove"    role="button" tabindex="0" title="Quitar">✕</div>
+          <button class="pr-btn" data-action="copy" data-asin="${escapeHtml(product.asin)}" title="Copiar enlace">Ln</button>
+          <button class="pr-btn" data-action="remove" data-asin="${escapeHtml(product.asin)}" title="Quitar">X</button>
         </div>
-      `;
+      </article>
+    `).join('');
 
-      item.querySelector('.pr-up').addEventListener('click', () => {
-        if (idx === 0) return;
-        loadRanking(prods => {
-          [prods[idx - 1], prods[idx]] = [prods[idx], prods[idx - 1]];
-          saveRanking(prods); render(prods);
-        });
+    if (draggable) bindDragAndDrop();
+    bindItemButtons();
+  }
+
+  function buildStatusLine() {
+    if (!state.bulk.active) {
+      return `${state.products.length} productos guardados. Ajusta filtros, exporta o descarga assets.`;
+    }
+
+    const percent = state.bulk.total ? Math.round(((state.bulk.completed + state.bulk.failed) / state.bulk.total) * 100) : 0;
+    return `Descarga en curso: ${state.bulk.completed}/${state.bulk.total} completados, ${state.bulk.failed} con error. ${state.bulk.message || `${percent}%`}`;
+  }
+
+  function bindItemButtons() {
+    document.querySelectorAll('.pr-btn[data-action="remove"]').forEach(button => {
+      button.addEventListener('click', () => {
+        const asin = button.dataset.asin;
+        saveRanking(state.products.filter(product => product.asin !== asin));
+        render();
+        showNotification('Producto eliminado del ranking');
       });
+    });
 
-      item.querySelector('.pr-down').addEventListener('click', () => {
-        loadRanking(prods => {
-          if (idx >= prods.length - 1) return;
-          [prods[idx], prods[idx + 1]] = [prods[idx + 1], prods[idx]];
-          saveRanking(prods); render(prods);
-        });
+    document.querySelectorAll('.pr-btn[data-action="copy"]').forEach(button => {
+      button.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(getAffiliateUrl(button.dataset.asin));
+          showNotification('Enlace copiado al portapapeles');
+        } catch (_) {
+          showNotification('No se pudo copiar el enlace');
+        }
       });
-
-      item.querySelector('.pr-remove').addEventListener('click', () => {
-        loadRanking(prods => {
-          const updated = prods.filter(x => x.asin !== p.asin);
-          saveRanking(updated); render(updated);
-          showNotif('Eliminado del ranking');
-        });
-      });
-
-      item.querySelector('.pr-copy-link').addEventListener('click', function () {
-        const btn = this;
-        copyAffiliateLink(p.asin, btn);
-      });
-
-      // Drag & drop
-      item.addEventListener('dragstart', onDragStart);
-      item.addEventListener('dragover',  onDragOver);
-      item.addEventListener('drop',      onDrop);
-      item.addEventListener('dragend',   onDragEnd);
-
-      list.appendChild(item);
     });
   }
 
-  // ── DRAG & DROP ───────────────────────────────────────────────────────────────
+  function bindDragAndDrop() {
+    let draggedAsin = '';
 
-  let dragSrc = null;
+    document.querySelectorAll('.pr-item.pr-draggable').forEach(item => {
+      item.addEventListener('dragstart', event => {
+        draggedAsin = item.dataset.asin;
+        item.classList.add('pr-dragging');
+        event.dataTransfer.effectAllowed = 'move';
+      });
 
-  function onDragStart(e) {
-    dragSrc = this.dataset.asin;
-    this.classList.add('pr-dragging');
-    e.dataTransfer.effectAllowed = 'move';
-  }
-  function onDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
-  function onDrop(e) {
-    e.preventDefault();
-    const target = this.dataset.asin;
-    if (!dragSrc || dragSrc === target) return;
-    loadRanking(prods => {
-      const si = prods.findIndex(x => x.asin === dragSrc);
-      const ti = prods.findIndex(x => x.asin === target);
-      if (si < 0 || ti < 0) return;
-      const [moved] = prods.splice(si, 1);
-      prods.splice(ti, 0, moved);
-      saveRanking(prods); render(prods);
+      item.addEventListener('dragover', event => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+      });
+
+      item.addEventListener('drop', event => {
+        event.preventDefault();
+        const targetAsin = item.dataset.asin;
+        if (!draggedAsin || draggedAsin === targetAsin) return;
+
+        const products = [...state.products];
+        const sourceIndex = products.findIndex(product => product.asin === draggedAsin);
+        const targetIndex = products.findIndex(product => product.asin === targetAsin);
+        if (sourceIndex === -1 || targetIndex === -1) return;
+
+        const [moved] = products.splice(sourceIndex, 1);
+        products.splice(targetIndex, 0, moved);
+        saveRanking(products);
+        render();
+      });
+
+      item.addEventListener('dragend', () => {
+        item.classList.remove('pr-dragging');
+        draggedAsin = '';
+      });
     });
   }
-  function onDragEnd() { this.classList.remove('pr-dragging'); dragSrc = null; }
 
-  // ── EVENTOS ───────────────────────────────────────────────────────────────────
+  function addProduct(product) {
+    if (!product?.asin) return;
+
+    if (state.products.some(item => item.asin === product.asin)) {
+      showNotification('Ese producto ya esta en el ranking');
+      return;
+    }
+
+    const nextProducts = [...state.products, { ...product, addedAt: product.addedAt || Date.now() }];
+    saveRanking(nextProducts);
+    render();
+    showNotification('Producto anadido al ranking');
+
+    if (state.settings.autoOpenPanel) {
+      document.getElementById('pr-panel').classList.add('pr-open');
+    }
+  }
+
+  function buildExportRows() {
+    return state.products.map((product, index) => ({
+      position: index + 1,
+      asin: product.asin,
+      title: product.title || '',
+      price: product.price || '',
+      hasVideo: product.hasVideo ? 'YES' : 'NO',
+      productUrl: getProductBaseUrl(product.asin),
+      affiliateUrl: getAffiliateUrl(product.asin),
+      imageUrl: product.imageUrl || ''
+    }));
+  }
+
+  function downloadTextFile(filename, content, mimeType) {
+    const dataUrl = `data:${mimeType};charset=utf-8,${encodeURIComponent(content)}`;
+    chrome.runtime.sendMessage({ action: 'downloadFile', url: dataUrl, filename }, () => void chrome.runtime.lastError);
+  }
+  function exportBriefing() {
+    const rows = buildExportRows();
+    if (!rows.length) {
+      showNotification('No hay productos para exportar');
+      return;
+    }
+
+    const lines = [
+      'PRODRADAR - RANKING BRIEF',
+      '=========================',
+      `Date: ${new Date().toLocaleDateString('es-ES')}`,
+      `Products: ${rows.length}`,
+      `With video: ${rows.filter(row => row.hasVideo === 'YES').length}`,
+      `Affiliate tag: ${state.settings.affiliateTag || '(none)'}`,
+      ''
+    ];
+
+    rows.forEach(row => {
+      lines.push(`#${row.position} - ${row.title}`);
+      lines.push(`ASIN: ${row.asin}`);
+      lines.push(`Price: ${row.price || 'N/A'}`);
+      lines.push(`Video: ${row.hasVideo}`);
+      lines.push(`URL: ${row.productUrl}`);
+      lines.push(`Affiliate: ${row.affiliateUrl}`);
+      lines.push(`Image: ${row.imageUrl}`);
+      lines.push('');
+    });
+
+    downloadTextFile(`${sanitizeFolderName(state.settings.folderName)}/briefing.txt`, lines.join('\n'), 'text/plain');
+    showNotification('Briefing TXT exportado');
+  }
+
+  function exportCsv() {
+    const rows = buildExportRows();
+    if (!rows.length) {
+      showNotification('No hay productos para exportar');
+      return;
+    }
+
+    const header = ['position', 'asin', 'title', 'price', 'hasVideo', 'productUrl', 'affiliateUrl', 'imageUrl'];
+    const csv = [header.join(',')]
+      .concat(rows.map(row => header.map(key => `"${String(row[key]).replace(/"/g, '""')}"`).join(',')))
+      .join('\n');
+
+    downloadTextFile(`${sanitizeFolderName(state.settings.folderName)}/ranking.csv`, csv, 'text/csv');
+    showNotification('CSV exportado');
+  }
+
+  function exportJson() {
+    const rows = buildExportRows();
+    if (!rows.length) {
+      showNotification('No hay productos para exportar');
+      return;
+    }
+
+    downloadTextFile(
+      `${sanitizeFolderName(state.settings.folderName)}/ranking.json`,
+      JSON.stringify(rows, null, 2),
+      'application/json'
+    );
+    showNotification('JSON exportado');
+  }
+
+  function startBulkDownload() {
+    if (!state.products.length) {
+      showNotification('El ranking esta vacio');
+      return;
+    }
+
+    if (!state.settings.downloadImages && !state.settings.downloadVideos) {
+      showNotification('Activa al menos una opcion de descarga');
+      return;
+    }
+
+    const rootFolder = sanitizeFolderName(state.settings.folderName);
+    const totalTasks = state.products.reduce((total, product) => {
+      let count = total;
+      if (state.settings.downloadImages && product.imageUrl) count += 1;
+      if (state.settings.downloadVideos && product.hasVideo) count += 1;
+      return count;
+    }, 0);
+
+    if (!totalTasks) {
+      showNotification('No hay assets descargables con la configuracion actual');
+      return;
+    }
+
+    const jobId = `bulk-${Date.now()}`;
+    state.bulk = {
+      jobId,
+      total: totalTasks,
+      completed: 0,
+      failed: 0,
+      message: 'Preparando assets',
+      active: true,
+      itemStates: {}
+    };
+    render();
+
+    state.products.forEach((product, index) => {
+      const position = String(index + 1).padStart(2, '0');
+      const folder = `${rootFolder}/${position}_${product.asin}`;
+      const safeTitle = sanitizeText(product.title, 'producto').slice(0, 60) || 'producto';
+
+      if (state.settings.downloadImages && product.imageUrl) {
+        const imageUrl = product.imageUrl.replace(/\._[^.]+_(\.\w+)$/, '$1');
+        chrome.runtime.sendMessage({
+          action: 'downloadFile',
+          url: imageUrl,
+          filename: `${folder}/image.jpg`,
+          job: {
+            jobId,
+            itemId: `image-${product.asin}`,
+            label: `${product.asin} image`,
+            total: totalTasks
+          }
+        }, () => void chrome.runtime.lastError);
+      }
+
+      if (state.settings.downloadVideos && product.hasVideo) {
+        chrome.runtime.sendMessage({
+          action: 'fetchAndDownloadVideo',
+          asin: product.asin,
+          origin: location.origin,
+          includeRelated: state.settings.includeRelatedVideos,
+          filename: `${folder}/${safeTitle}`,
+          job: {
+            jobId,
+            itemId: `video-${product.asin}`,
+            label: `${product.asin} video`,
+            total: totalTasks
+          }
+        }, () => void chrome.runtime.lastError);
+      }
+    });
+
+    showNotification(`Descarga iniciada en la carpeta ${rootFolder}`);
+  }
+
+  function handleProgress(message) {
+    if (message.action !== 'jobProgress') return;
+    if (!state.bulk.active || message.jobId !== state.bulk.jobId) return;
+
+    state.bulk.itemStates[message.itemId] = message.status;
+    state.bulk.message = `${message.label || 'Asset'}: ${message.message || message.status}`;
+    state.bulk.completed = Object.values(state.bulk.itemStates).filter(status => status === 'completed').length;
+    state.bulk.failed = Object.values(state.bulk.itemStates).filter(status => status === 'failed').length;
+
+    if (state.bulk.completed + state.bulk.failed >= state.bulk.total) {
+      state.bulk.active = false;
+      state.bulk.message = state.bulk.failed
+        ? `Proceso terminado con ${state.bulk.failed} errores`
+        : 'Descarga completada';
+      showNotification(state.bulk.message);
+    }
+
+    render();
+  }
+
+  function showNotification(message) {
+    const toast = document.getElementById('pr-notification');
+    if (!toast) return;
+
+    toast.textContent = message;
+    toast.classList.add('pr-show');
+    clearTimeout(showNotification.timer);
+    showNotification.timer = setTimeout(() => toast.classList.remove('pr-show'), 2200);
+  }
 
   function bindEvents() {
     document.getElementById('pr-toggle').addEventListener('click', () => {
       document.getElementById('pr-panel').classList.toggle('pr-open');
     });
+
     document.getElementById('pr-close-btn').addEventListener('click', () => {
       document.getElementById('pr-panel').classList.remove('pr-open');
     });
 
-    document.getElementById('pr-tag-input').addEventListener('change', () => {
-      const tag = getAffiliateTag();
-      chrome.storage.local.set({ prodradar_affiliate_tag: tag });
+    document.getElementById('pr-search').addEventListener('input', event => {
+      saveSettings({ searchQuery: event.target.value });
+      render();
     });
 
-    document.getElementById('pr-btn-download').addEventListener('click', downloadAllAssets);
-    document.getElementById('pr-btn-export').addEventListener('click', exportBriefing);
+    document.getElementById('pr-filter').addEventListener('change', event => {
+      saveSettings({ filterMode: event.target.value });
+      render();
+    });
+
+    document.getElementById('pr-sort').addEventListener('change', event => {
+      saveSettings({ sortMode: event.target.value });
+      render();
+    });
+
+    document.getElementById('pr-folder-input').addEventListener('change', event => {
+      const folderName = sanitizeFolderName(event.target.value);
+      event.target.value = folderName;
+      saveSettings({ folderName });
+    });
+
+    document.getElementById('pr-tag-input').addEventListener('change', event => {
+      saveSettings({ affiliateTag: sanitizeText(event.target.value).replace(/\s+/g, '') });
+      hydrateInputs();
+      render();
+    });
+
+    document.getElementById('pr-check-images').addEventListener('change', event => {
+      saveSettings({ downloadImages: event.target.checked });
+    });
+
+    document.getElementById('pr-check-videos').addEventListener('change', event => {
+      saveSettings({ downloadVideos: event.target.checked });
+    });
+
+    document.getElementById('pr-check-related').addEventListener('change', event => {
+      saveSettings({ includeRelatedVideos: event.target.checked });
+    });
+
+    document.getElementById('pr-check-open').addEventListener('change', event => {
+      saveSettings({ autoOpenPanel: event.target.checked });
+    });
+
+    document.getElementById('pr-btn-download').addEventListener('click', startBulkDownload);
+    document.getElementById('pr-btn-briefing').addEventListener('click', exportBriefing);
+    document.getElementById('pr-btn-csv').addEventListener('click', exportCsv);
+    document.getElementById('pr-btn-json').addEventListener('click', exportJson);
+
     document.getElementById('pr-btn-clear').addEventListener('click', () => {
-      if (!confirm('¿Limpiar todo el ranking?')) return;
-      saveRanking([]); render([]);
-      showNotif('Ranking limpiado');
-    });
-
-    window.addEventListener('prodradar:add', (e) => {
-      addProduct(e.detail);
-      document.getElementById('pr-panel').classList.add('pr-open');
-    });
-  }
-
-  // ── AÑADIR PRODUCTO ───────────────────────────────────────────────────────────
-
-  function addProduct(product) {
-    loadRanking(products => {
-      if (products.find(p => p.asin === product.asin)) {
-        showNotif('⚠️ Ya está en el ranking');
+      if (!state.products.length) {
+        showNotification('No hay productos que borrar');
         return;
       }
-      products.push(product);
-      saveRanking(products); render(products);
-      showNotif('✓ Añadido al ranking');
+
+      if (!confirm('Quieres vaciar todo el ranking?')) return;
+      saveRanking([]);
+      render();
+      showNotification('Ranking vaciado');
     });
+
+    window.addEventListener('prodradar:add', event => addProduct(event.detail));
+    chrome.runtime.onMessage.addListener(handleProgress);
   }
 
-  // ── COPIAR ENLACE DE AFILIADO ─────────────────────────────────────────────────
-
-  async function copyAffiliateLink(asin, btn) {
-    const tag      = getAffiliateTag();
-    const origin   = location.origin;
-    const longUrl  = tag ? `${origin}/dp/${asin}/?tag=${tag}` : `${origin}/dp/${asin}`;
-
-    let finalUrl = longUrl;
-
-    // Intentar obtener el short link de SiteStripe si hay tag configurado
-    if (tag) {
-      try {
-        const apiUrl = `${origin}/gp/associates/sitestripe/getShortUrl?asin=${asin}&storeId=${tag}&ref=nosim&linkCode=ll2`;
-        const res    = await fetch(apiUrl, { credentials: 'include' });
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.shortUrl) finalUrl = data.shortUrl;
-        }
-      } catch (_) {
-        // Si falla SiteStripe usamos el enlace largo sin problema
-      }
-    }
-
-    try {
-      await navigator.clipboard.writeText(finalUrl);
-      // Feedback visual en el botón
-      btn.classList.add('pr-copied');
-      btn.textContent = '✓';
-      setTimeout(() => {
-        btn.classList.remove('pr-copied');
-        btn.textContent = '🔗';
-      }, 1500);
-      const isShort = finalUrl.includes('amzn.to');
-      showNotif(isShort ? '🔗 Enlace corto copiado' : '🔗 Enlace afiliado copiado');
-    } catch (_) {
-      showNotif('⚠️ No se pudo copiar');
-    }
-  }
-
-  // ── DESCARGAR ASSETS ──────────────────────────────────────────────────────────
-
-  function getRootFolder() {
-    const input = document.getElementById('pr-folder-input');
-    const raw   = (input?.value || '').trim();
-    const safe  = raw.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, '-').slice(0, 80);
-    return safe || 'ranking';
-  }
-
-  function downloadAllAssets() {
-    loadRanking(products => {
-      if (!products.length) { showNotif('El ranking está vacío'); return; }
-
-      const root   = getRootFolder();
-      const origin = location.origin;
-      let imgCount = 0;
-      let vidCount = 0;
-
-      products.forEach((p, idx) => {
-        const pos       = String(idx + 1).padStart(2, '0');
-        const safeTitle = (p.title || 'producto')
-          .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7E]/g, '').replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60) || 'producto';
-        const folder    = `${root}/${pos}_${p.asin}`;
-
-        // Imagen del producto (versión a máxima resolución)
-        if (p.imageUrl) {
-          const fullImg = p.imageUrl.replace(/\._[^.]+_(\.\w+)$/, '$1');
-          chrome.runtime.sendMessage({
-            action:   'downloadFile',
-            url:      fullImg,
-            filename: `${folder}/imagen.jpg`
-          });
-          imgCount++;
-        }
-
-        // Vídeo del vendedor (fetch página → extrae URL HLS → descarga como MP4)
-        if (p.hasVideo) {
-          chrome.runtime.sendMessage({
-            action:   'fetchAndDownloadVideo',
-            asin:     p.asin,
-            origin,
-            filename: `${folder}/${safeTitle}.mp4`
-          });
-          vidCount++;
-        }
-      });
-
-      const parts = [];
-      if (imgCount) parts.push(`${imgCount} imagen${imgCount > 1 ? 'es' : ''}`);
-      if (vidCount) parts.push(`${vidCount} vídeo${vidCount > 1 ? 's' : ''}`);
-      showNotif(`⬇️ Descargando en "${root}"…`);
-    });
-  }
-
-  // ── EXPORTAR BRIEFING ─────────────────────────────────────────────────────────
-
-  function exportBriefing() {
-    loadRanking(products => {
-      if (!products.length) { showNotif('El ranking está vacío'); return; }
-
-      const tag    = getAffiliateTag();
-      const origin = location.origin;
-
-      const lines = [
-        'PRODRADAR - BRIEFING DE RANKING',
-        '================================',
-        `Fecha: ${new Date().toLocaleDateString('es-ES')}`,
-        `Total productos: ${products.length}`,
-        `Con vídeo: ${products.filter(p => p.hasVideo).length}`,
-        tag ? `Tag afiliado: ${tag}` : 'Tag afiliado: (no configurado)',
-        '', 'PRODUCTOS POR POSICIÓN:', '------------------------',
-      ];
-      products.forEach((p, idx) => {
-        const baseUrl      = `${origin}/dp/${p.asin}`;
-        const affiliateUrl = tag ? `${baseUrl}/?tag=${tag}` : baseUrl;
-        lines.push(`\n#${idx + 1} — ${p.title}`);
-        lines.push(`   ASIN:      ${p.asin}`);
-        lines.push(`   Precio:    ${p.price || 'N/D'}`);
-        lines.push(`   Vídeo:     ${p.hasVideo ? 'SÍ ▶' : 'NO'}`);
-        lines.push(`   Imagen:    ${p.imageUrl}`);
-        lines.push(`   URL:       ${baseUrl}`);
-        lines.push(`   Afiliado:  ${affiliateUrl}`);
-      });
-
-      const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
-      const root = getRootFolder();
-      chrome.runtime.sendMessage({
-        action:   'downloadFile',
-        url:      URL.createObjectURL(blob),
-        filename: `${root}/briefing.txt`
-      });
-      showNotif('📋 Briefing exportado');
-    });
-  }
-
-  // ── NOTIFICACIÓN ──────────────────────────────────────────────────────────────
-
-  let notifTimer = null;
-  function showNotif(msg) {
-    const el = document.getElementById('pr-notification');
-    if (!el) return;
-    el.textContent = msg;
-    el.classList.add('pr-show');
-    clearTimeout(notifTimer);
-    notifTimer = setTimeout(() => el.classList.remove('pr-show'), 2500);
-  }
-
-  // ── UTIL ──────────────────────────────────────────────────────────────────────
-
-  function esc(str) {
-    return (str || '')
+  function escapeHtml(value) {
+    return (value || '')
       .replace(/&/g, '&amp;')
-      .replace(/"/g, '&quot;')
       .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   }
 
-  // ── INICIO ────────────────────────────────────────────────────────────────────
+  function init() {
+    createRoot();
+    bindEvents();
+    loadStorage();
+  }
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
     init();
   }
-
 })();

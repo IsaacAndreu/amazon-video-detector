@@ -1,20 +1,20 @@
-// =====================================================
+﻿// =====================================================
 //  PRODRADAR - Content Script
-//  Detección real de vídeo via fetch por producto
+//  DetecciÃ³n real de vÃ­deo via fetch por producto
 // =====================================================
 
 const BADGE_CLASS     = 'amz-vid-badge';
 const PROCESSED_CLASS = 'amz-vid-processed';
 const ADD_BTN_CLASS   = 'amz-add-btn';
 
-// ── COLA DE FETCHES ───────────────────────────────────────────────────────────
-const videoCache   = new Map();   // asin → true | false | null
-const fetchPending = new Map();   // asin → Promise (para no duplicar)
+// â”€â”€ COLA DE FETCHES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const videoCache   = new Map();   // asin â†’ true | false | null
+const fetchPending = new Map();   // asin â†’ Promise (para no duplicar)
 const fetchQueue   = [];          // [{asin, card}] esperando turno
 let   activeFetches = 0;
-const MAX_CONCURRENT = 3;         // Máximo simultáneo para no sobrecargar
+const MAX_CONCURRENT = 3;         // MÃ¡ximo simultÃ¡neo para no sobrecargar
 
-// ── COMPROBAR VÍDEO FETCHING LA PÁGINA DE PRODUCTO ───────────────────────────
+// â”€â”€ COMPROBAR VÃDEO FETCHING LA PÃGINA DE PRODUCTO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function doFetchCheck(asin) {
   try {
@@ -31,34 +31,34 @@ async function doFetchCheck(asin) {
 
     if (!res.ok) return false;
     const html = await res.text();
-    return detectVideoInHtml(html, asin); // ← pasamos el ASIN
+    return detectVideoInHtml(html, asin); // â† pasamos el ASIN
 
   } catch {
     return null;
   }
 }
 
-// detectVideoInHtml — busca indicadores de vídeo ANCLADOS al ASIN del producto.
+// detectVideoInHtml â€” busca indicadores de vÃ­deo ANCLADOS al ASIN del producto.
 //
-// ¿Por qué anclarse al pageAsin?
-//   Las páginas de producto de Amazon incluyen vídeos de reviews, productos
+// Â¿Por quÃ© anclarse al pageAsin?
+//   Las pÃ¡ginas de producto de Amazon incluyen vÃ­deos de reviews, productos
 //   patrocinados y brand stores que cargan los mismos componentes VSE.
 //   Escanear todo el HTML genera FALSOS POSITIVOS.
-//   La solución: buscar totalVideoCount / URL de CDN SOLO dentro del bloque
-//   JSON que contiene "pageAsin":"ASIN" — esos datos pertenecen al producto.
+//   La soluciÃ³n: buscar totalVideoCount / URL de CDN SOLO dentro del bloque
+//   JSON que contiene "pageAsin":"ASIN" â€” esos datos pertenecen al producto.
 //
-// Indicadores válidos (confirmados en amazon.es):
-//   totalVideoCount > 0          ← contador de vídeos del producto
-//   vse-vms-transcoding-artifact ← URL del CDN de vídeo transcodificado
-//   videoIngressATFSlateThumbURL ← solo si tiene valor de URL (no solo la clave)
+// Indicadores vÃ¡lidos (confirmados en amazon.es):
+//   totalVideoCount > 0          â† contador de vÃ­deos del producto
+//   vse-vms-transcoding-artifact â† URL del CDN de vÃ­deo transcodificado
+//   videoIngressATFSlateThumbURL â† solo si tiene valor de URL (no solo la clave)
 function detectVideoInHtml(html, asin) {
-  // DIAGNÓSTICO CONFIRMÓ (HTML fetched estático de amazon.es):
-  //   - "pageAsin" y "videoAsin" NO existen en el HTML estático
-  //     (son datos del DOM dinámico, inyectados por JS tras la carga)
-  //   - "mediaAsin":"ASIN" SÍ existe en el HTML estático, en el bloque
-  //     de configuración del ImageBlock/VSE del producto
+  // DIAGNÃ“STICO CONFIRMÃ“ (HTML fetched estÃ¡tico de amazon.es):
+  //   - "pageAsin" y "videoAsin" NO existen en el HTML estÃ¡tico
+  //     (son datos del DOM dinÃ¡mico, inyectados por JS tras la carga)
+  //   - "mediaAsin":"ASIN" SÃ existe en el HTML estÃ¡tico, en el bloque
+  //     de configuraciÃ³n del ImageBlock/VSE del producto
   //   - "vse-vms-transcoding-artifact" aparece en el MISMO script que
-  //     "mediaAsin" cuando el producto tiene vídeo
+  //     "mediaAsin" cuando el producto tiene vÃ­deo
   //   Script #189 (22444 chars) tiene ambos confirmados para B06X9NQ8GX
 
   const mediaAsinRe = new RegExp(`["']mediaAsin["']\\s*:\\s*["']${asin}["']`);
@@ -72,10 +72,10 @@ function detectVideoInHtml(html, asin) {
     ? html.slice(scriptStart, scriptEnd)
     : html.slice(Math.max(0, m.index - 5000), m.index + 5000);
 
-  // Indicador primario: CDN de vídeo transcodificado en el mismo script
+  // Indicador primario: CDN de vÃ­deo transcodificado en el mismo script
   if (script.includes('vse-vms-transcoding-artifact')) return true;
 
-  // Indicadores secundarios (por si el CDN no está en este script)
+  // Indicadores secundarios (por si el CDN no estÃ¡ en este script)
   const cnt = script.match(/["']totalVideoCount["']\s*:\s*["'](\d+)["']/);
   if (cnt && parseInt(cnt[1]) > 0) return true;
   if (/["']videoIngressATFSlateThumbURL["']\s*:\s*["']https?:\/\//.test(script)) return true;
@@ -83,15 +83,15 @@ function detectVideoInHtml(html, asin) {
   return false;
 }
 
-// detectVideoInCurrentPageDOM — inspección directa del DOM en la página actual.
+// detectVideoInCurrentPageDOM â€” inspecciÃ³n directa del DOM en la pÃ¡gina actual.
 // Usa el mismo enfoque anclado al ASIN, pero con datos del DOM en vivo.
 function detectVideoInCurrentPageDOM() {
   // Extraer el ASIN de la URL actual (ej. /dp/B06X9NQ8GX/ o /gp/product/B06X9NQ8GX/)
   const asin = location.pathname.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1];
 
   // 1. Buscar en scripts que contengan mediaAsin o pageAsin del producto.
-  //    - mediaAsin → scripts estáticos del ImageBlock/VSE (HTML inicial)
-  //    - pageAsin  → scripts dinámicos inyectados por JS (solo en DOM vivo)
+  //    - mediaAsin â†’ scripts estÃ¡ticos del ImageBlock/VSE (HTML inicial)
+  //    - pageAsin  â†’ scripts dinÃ¡micos inyectados por JS (solo en DOM vivo)
   if (asin) {
     const patterns = [
       new RegExp(`["']mediaAsin["']\\s*:\\s*["']${asin}["']`),
@@ -101,7 +101,7 @@ function detectVideoInCurrentPageDOM() {
       const t = s.textContent;
       if (!patterns.some(re => re.test(t))) continue;
 
-      // Script del producto → buscar indicadores de vídeo en TODO el script
+      // Script del producto â†’ buscar indicadores de vÃ­deo en TODO el script
       if (t.includes('vse-vms-transcoding-artifact'))                           return true;
       if (/["']videoAsin["']\s*:\s*["'][a-f0-9]{8,}["']/.test(t))             return true;
       const cnt = t.match(/["']totalVideoCount["']\s*:\s*["'](\d+)["']/);
@@ -111,14 +111,14 @@ function detectVideoInCurrentPageDOM() {
   }
 
   // 2. Elementos del reproductor VSE renderizados en el DOM vivo.
-  //    En la página del producto propio, estos solo aparecen si HAY vídeo del vendedor.
+  //    En la pÃ¡gina del producto propio, estos solo aparecen si HAY vÃ­deo del vendedor.
   if (document.querySelector('.vse-vp-container'))    return true;
   if (document.getElementById('videoInsertedWidget')) return true;
 
   return false;
 }
 
-// ── GESTIÓN DE LA COLA ────────────────────────────────────────────────────────
+// â”€â”€ GESTIÃ“N DE LA COLA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function queueProduct(asin, card) {
   if (videoCache.has(asin) || fetchPending.has(asin)) return;
@@ -149,21 +149,21 @@ function processQueue() {
 }
 
 function updateCardBadge(card, asin, hasVideo) {
-  // Buscar el badge en el card (puede haber más de una instancia del mismo asin)
+  // Buscar el badge en el card (puede haber mÃ¡s de una instancia del mismo asin)
   document.querySelectorAll(`[data-asin="${asin}"] .${BADGE_CLASS}`).forEach(badge => {
     applyBadgeState(badge, hasVideo);
   });
 }
 
-// ── ESTADOS DEL BADGE ─────────────────────────────────────────────────────────
+// â”€â”€ ESTADOS DEL BADGE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function applyBadgeState(badge, state) {
   if (state === true) {
-    badge.textContent       = '▶ VIDEO';
+    badge.textContent       = 'VIDEO';
     badge.style.background  = '#1a7f37';
     badge.style.border      = '1px solid #2ea84a';
   } else if (state === false) {
-    badge.textContent       = '✕ Sin video';
+    badge.textContent       = 'Sin video';
     badge.style.background  = 'rgba(60,60,60,0.7)';
     badge.style.border      = '1px solid rgba(255,255,255,0.15)';
   } else {
@@ -196,16 +196,16 @@ function createBadge() {
     border:        '1px solid rgba(255,255,255,0.15)',
     transition:    'background 0.4s, border 0.4s',
   });
-  badge.textContent = '⏳';
+  badge.textContent = '...';
   return badge;
 }
 
-// ── BOTÓN "＋ RANKING" ────────────────────────────────────────────────────────
+// â”€â”€ BOTÃ“N "ï¼‹ RANKING" â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function createAddButton(card) {
   const btn = document.createElement('button');
   btn.className = ADD_BTN_CLASS;
-  btn.textContent = '＋ Ranking';
+  btn.textContent = '+ Ranking';
   Object.assign(btn.style, {
     position:        'absolute',
     bottom:          '6px',
@@ -238,22 +238,22 @@ function createAddButton(card) {
     e.stopPropagation();
     const data = extractProductData(card);
     window.dispatchEvent(new CustomEvent('prodradar:add', { detail: data }));
-    btn.textContent = '✓ Añadido';
+    btn.textContent = 'Anadido';
     btn.style.background = '#1a7f37';
     setTimeout(() => {
-      btn.textContent = '＋ Ranking';
+      btn.textContent = '+ Ranking';
       btn.style.background = '#131921';
     }, 2000);
   });
   return btn;
 }
 
-// ── EXTRAER DATOS DEL PRODUCTO ────────────────────────────────────────────────
+// â”€â”€ EXTRAER DATOS DEL PRODUCTO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function extractProductData(card) {
   const asin     = card.dataset.asin || card.getAttribute('data-asin') || '';
   const titleEl  = card.querySelector('h2 a span, .a-text-normal, .a-size-base-plus');
-  const title    = titleEl?.textContent?.trim() || 'Sin título';
+  const title    = titleEl?.textContent?.trim() || 'Sin titulo';
   const imgEl    = card.querySelector('.s-image, img[src*="amazon"]');
   const imageUrl = imgEl?.src || '';
   const priceEl  = card.querySelector('.a-price .a-offscreen');
@@ -262,7 +262,7 @@ function extractProductData(card) {
   return { asin, title, imageUrl, price, hasVideo, addedAt: Date.now() };
 }
 
-// ── WRAPPER DE IMAGEN ─────────────────────────────────────────────────────────
+// â”€â”€ WRAPPER DE IMAGEN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function findImageWrapper(card) {
   const selectors = [
@@ -280,7 +280,7 @@ function findImageWrapper(card) {
   return img ? img.parentElement : null;
 }
 
-// ── INTERSECTION OBSERVER: solo cargamos lo visible ──────────────────────────
+// â”€â”€ INTERSECTION OBSERVER: solo cargamos lo visible â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const visibilityObserver = new IntersectionObserver(
   (entries) => {
@@ -297,7 +297,7 @@ const visibilityObserver = new IntersectionObserver(
   { rootMargin: '300px' } // Pre-cargar 300px antes de que sean visibles
 );
 
-// ── PROCESAR PRODUCTS DE BÚSQUEDA ────────────────────────────────────────────
+// â”€â”€ PROCESAR PRODUCTS DE BÃšSQUEDA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function processProducts() {
   const cards = document.querySelectorAll(`
@@ -323,7 +323,7 @@ function processProducts() {
     // Badge en estado "cargando"
     imgWrapper.appendChild(createBadge());
 
-    // Botón + Ranking
+    // BotÃ³n + Ranking
     const addBtn = createAddButton(card);
     imgWrapper.appendChild(addBtn);
     imgWrapper.addEventListener('mouseenter', () => { addBtn.style.opacity = '1'; });
@@ -334,7 +334,7 @@ function processProducts() {
   });
 }
 
-// ── PÁGINA DE PRODUCTO INDIVIDUAL ────────────────────────────────────────────
+// â”€â”€ PÃGINA DE PRODUCTO INDIVIDUAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function processProductPage() {
   if (!/\/(?:dp|gp\/product)\//.test(location.pathname)) return;
@@ -353,12 +353,12 @@ function processProductPage() {
   const badge = createBadge();
   mainImgWrapper.appendChild(badge);
 
-  // En la página de producto ya estamos en ella: usar DOM directo (más preciso)
+  // En la pÃ¡gina de producto ya estamos en ella: usar DOM directo (mÃ¡s preciso)
   const hasVideo = detectVideoInCurrentPageDOM();
   applyBadgeState(badge, hasVideo);
 }
 
-// ── VIDEOS PARA EL POPUP (página de producto) ─────────────────────────────────
+// â”€â”€ VIDEOS PARA EL POPUP (pÃ¡gina de producto) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function findVideosOnPage() {
   const videos = [];
@@ -379,7 +379,7 @@ function findVideosOnPage() {
   return videos;
 }
 
-// ── MUTATION OBSERVER ─────────────────────────────────────────────────────────
+// â”€â”€ MUTATION OBSERVER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 let debounce = null;
 new MutationObserver(() => {
@@ -387,9 +387,9 @@ new MutationObserver(() => {
   debounce = setTimeout(() => { processProducts(); processProductPage(); }, 600);
 }).observe(document.body, { childList: true, subtree: true });
 
-// ── MENSAJES DEL POPUP ────────────────────────────────────────────────────────
+// â”€â”€ MENSAJES DEL POPUP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-// Obtiene el título del producto de la página actual
+// Obtiene el tÃ­tulo del producto de la pÃ¡gina actual
 function getProductTitle() {
   const selectors = [
     '#productTitle',
@@ -409,7 +409,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const v     = findVideosOnPage();
     const title = getProductTitle();
 
-    // Añadir URLs capturadas por el interceptor de fetch/XHR (interceptor.js, MAIN world)
+    // AÃ±adir URLs capturadas por el interceptor de fetch/XHR (interceptor.js, MAIN world)
     try {
       const intercepted = JSON.parse(sessionStorage.getItem('_pr_vids') || '[]');
       intercepted.forEach(url => {
@@ -422,7 +422,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true;
 });
 
-// ── INICIO ────────────────────────────────────────────────────────────────────
+// â”€â”€ INICIO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => { processProducts(); processProductPage(); });

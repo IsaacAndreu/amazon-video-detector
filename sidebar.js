@@ -388,7 +388,9 @@
       display: grid !important;
       grid-template-columns: 1fr 1fr 1fr !important;
       gap: 8px !important;
-      margin-bottom: 10px !important;
+      margin-top: 10px !important;
+      padding-top: 10px !important;
+      border-top: 1px solid rgba(30,42,50,0.08) !important;
     }
     .pr-setting-full { grid-column: 1 / -1 !important; }
     .pr-field-label {
@@ -542,7 +544,19 @@
         </div>
         <div id="pr-list"></div>
         <div id="pr-footer">
-          <div id="pr-settings">
+          <div class="pr-button-row">
+            <button id="pr-btn-download" class="pr-primary" type="button">Descargar assets</button>
+            <button id="pr-btn-briefing" class="pr-secondary" type="button">Export TXT</button>
+          </div>
+          <div class="pr-button-row">
+            <button id="pr-btn-csv" class="pr-ghost" type="button">Export CSV</button>
+            <button id="pr-btn-json" class="pr-ghost" type="button">Export JSON</button>
+          </div>
+          <div class="pr-button-row">
+            <button id="pr-btn-clear" class="pr-ghost" type="button">Vaciar ranking</button>
+            <button id="pr-btn-settings-toggle" class="pr-ghost" type="button">⚙ Ajustes ▾</button>
+          </div>
+          <div id="pr-settings" style="display:none!important">
             <div>
               <label class="pr-field-label" for="pr-folder-input">Carpeta</label>
               <input id="pr-folder-input" class="pr-input" type="text" placeholder="nombre-del-proyecto" spellcheck="false">
@@ -587,15 +601,6 @@
               <label class="pr-check"><input id="pr-check-open" type="checkbox"> Auto abrir panel</label>
             </div>
           </div>
-          <div class="pr-button-row">
-            <button id="pr-btn-download" class="pr-primary" type="button">Descargar assets</button>
-            <button id="pr-btn-briefing" class="pr-secondary" type="button">Export TXT</button>
-          </div>
-          <div class="pr-button-row">
-            <button id="pr-btn-csv" class="pr-ghost" type="button">Export CSV</button>
-            <button id="pr-btn-json" class="pr-ghost" type="button">Export JSON</button>
-          </div>
-          <button id="pr-btn-clear" class="pr-ghost" type="button">Vaciar ranking</button>
         </div>
       </aside>
       <div id="pr-notification"></div>
@@ -1288,6 +1293,14 @@
     window.addEventListener('prodradar:scanprogress', event => {
       state.scan = event.detail;
       updateScanStatus();
+    });
+
+    document.getElementById('pr-btn-settings-toggle').addEventListener('click', () => {
+      const s   = document.getElementById('pr-settings');
+      const btn = document.getElementById('pr-btn-settings-toggle');
+      const open = s.style.display === 'none' || s.style.display === '';
+      s.style.setProperty('display', open ? 'grid' : 'none', 'important');
+      btn.textContent = open ? '⚙ Ajustes ▴' : '⚙ Ajustes ▾';
     });
 
     document.getElementById('pr-btn-download').addEventListener('click', startBulkDownload);

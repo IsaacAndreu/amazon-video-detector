@@ -315,7 +315,9 @@ function processProducts() {
     const imgWrapper = findImageWrapper(card);
     if (!imgWrapper) return;
 
-    if (getComputedStyle(imgWrapper).position === 'static') {
+    // Evitar getComputedStyle() en el loop (fuerza reflow por cada tarjeta).
+    // Con la clase CSS ya tenemos position:relative sin coste de layout.
+    if (!imgWrapper.style.position || imgWrapper.style.position === 'static') {
       imgWrapper.style.position = 'relative';
     }
     if (imgWrapper.querySelector('.' + BADGE_CLASS)) return;
@@ -346,7 +348,7 @@ function processProductPage() {
 
   if (!mainImgWrapper || mainImgWrapper.querySelector('.' + BADGE_CLASS)) return;
 
-  if (getComputedStyle(mainImgWrapper).position === 'static') {
+  if (!mainImgWrapper.style.position || mainImgWrapper.style.position === 'static') {
     mainImgWrapper.style.position = 'relative';
   }
 

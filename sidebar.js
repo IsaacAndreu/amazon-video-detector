@@ -962,9 +962,16 @@
     updateProgressBar();
     render();
 
+    // Imágenes: se lanzan todas a la vez (son pequeñas, un solo fetch por imagen).
+    // Vídeos: cola con máximo 2 descargas simultáneas para no saturar la red ni la RAM.
+    // Sin este límite, 10 productos con vídeo = 10 descargas HLS en paralelo
+    // = ~50 peticiones de segmentos simultáneas → el navegador se congela.
+    const MAX_CONCURRENT_VIDEOS = 2;
+    const videoQueue = [];
+
     state.products.forEach((product, index) => {
       const position = String(index + 1).padStart(2, '0');
-      const folder = `${rootFolder}/${position}_${product.asin}`;
+      const folder   = `${rootFolder}/${position}_${product.asin}`;
       const safeTitle = sanitizeText(product.title, 'producto').slice(0, 60) || 'producto';
 
       if (state.settings.downloadImages && product.imageUrl) {
@@ -973,16 +980,23 @@
           action: 'downloadFile',
           url: imageUrl,
           filename: `${folder}/image.jpg`,
-          job: {
-            jobId,
-            itemId: `image-${product.asin}`,
-            label: `${product.asin} image`,
-            total: totalTasks
-          }
+          job: { jobId, itemId: `image-${product.asin}`, label: `${product.asin} image`, total: totalTasks }
         }, () => void chrome.runtime.lastError);
       }
 
       if (state.settings.downloadVideos && product.hasVideo) {
+        videoQueue.push({ product, folder, safeTitle });
+      }
+    });
+
+    // Despacha vídeos de la cola respetando el límite de concurrencia
+    let activeVideos = 0;
+    let videoIndex   = 0;
+
+    function sendNextVideo() {
+      while (activeVideos < MAX_CONCURRENT_VIDEOS && videoIndex < videoQueue.length) {
+        const { product, folder, safeTitle } = videoQueue[videoIndex++];
+        activeVideos++;
         chrome.runtime.sendMessage({
           action: 'fetchAndDownloadVideo',
           asin: product.asin,
@@ -990,17 +1004,41 @@
           includeRelated: state.settings.includeRelatedVideos,
           maxVideos: Number(state.settings.maxVideosPerProduct) || 0,
           filename: `${folder}/${safeTitle}`,
-          job: {
-            jobId,
-            itemId: `video-${product.asin}`,
-            label: `${product.asin} video`,
-            total: totalTasks
-          }
-        }, () => void chrome.runtime.lastError);
+          job: { jobId, itemId: `video-${product.asin}`, label: `${product.asin} video`, total: totalTasks }
+        }, () => {
+          void chrome.runtime.lastError;
+          activeVideos--;
+          sendNextVideo(); // lanzar el siguiente cuando uno termina
+        });
       }
-    });
+    }
+    sendNextVideo();
 
     showNotification(`Descarga iniciada en la carpeta ${rootFolder}`);
+  }
+
+  // Actualiza solo el badge de un producto concreto sin re-renderizar toda la lista.
+  // Esto evita destruir y recrear todos los nodos DOM en cada segmento HLS descargado.
+  function updateItemBadge(itemId, status, msg) {
+    if (!itemId.startsWith('video-')) return;
+    const asin = itemId.slice(6); // 'video-'.length === 6
+    const article = document.querySelector(`.pr-item[data-asin="${CSS.escape(asin)}"]`);
+    if (!article) return;
+
+    let badge = article.querySelector('.pr-dl-badge');
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'pr-dl-badge';
+      const info = article.querySelector('.pr-info');
+      if (info) info.appendChild(badge);
+    }
+
+    badge.className = `pr-dl-badge pr-dl-${status}`;
+    badge.textContent = status === 'running'
+      ? `⏳ ${msg || 'Descargando...'}`
+      : status === 'completed'
+      ? `✓ ${msg || 'Descargado'}`
+      : `✗ Error`;
   }
 
   function handleProgress(message) {
@@ -1013,16 +1051,22 @@
     state.bulk.completed = Object.values(state.bulk.itemStates).filter(s => s === 'completed').length;
     state.bulk.failed    = Object.values(state.bulk.itemStates).filter(s => s === 'failed').length;
 
+    // Actualizaciones quirúrgicas: NO re-renderizar toda la lista en cada evento de progreso.
+    // Durante una descarga HLS esto se dispara 200+ veces por vídeo; un render() completo
+    // cada vez destruye y recrea todos los nodos DOM → congelación del navegador.
+    updateProgressBar();
+    const statusEl = document.getElementById('pr-status');
+    if (statusEl) statusEl.textContent = buildStatusLine();
+    updateItemBadge(message.itemId, message.status, message.message || '');
+
     if (state.bulk.completed + state.bulk.failed >= state.bulk.total) {
       state.bulk.active = false;
       const notif = state.bulk.failed
         ? `Terminado con ${state.bulk.failed} error${state.bulk.failed > 1 ? 'es' : ''}`
         : `Completado — ${state.bulk.completed} asset${state.bulk.completed !== 1 ? 's' : ''} descargados`;
       showNotification(notif);
+      render(); // render() completo solo al terminar, no en cada segmento
     }
-
-    updateProgressBar();
-    render();
   }
 
   function showNotification(message) {

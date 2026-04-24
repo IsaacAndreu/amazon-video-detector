@@ -10,7 +10,10 @@
   const DEFAULT_SETTINGS = {
     folderName: 'ranking',
     affiliateTag: '',
-    geniusLinkPrefix: '',
+    geniusLinkApiKey:    '',
+    geniusLinkApiSecret: '',
+    geniusLinkGroupId:   '',
+    geniusLinkDomain:    '',
     autoOpenPanel: true,
     filterMode: 'all',
     sortMode: 'manual',
@@ -558,10 +561,24 @@
                 <option value="0">Sin limite</option>
               </select>
             </div>
-            <div class="pr-setting-full">
-              <label class="pr-field-label" for="pr-geniuslink-input">GeniusLink prefijo URL</label>
-              <input id="pr-geniuslink-input" class="pr-input" type="text" placeholder="https://geni.us/?url=" spellcheck="false"
-                style="font-size:11px!important">
+            <div class="pr-setting-full" style="border-top:1px solid rgba(30,42,50,0.08)!important;padding-top:10px!important;margin-top:2px!important">
+              <label class="pr-field-label">GeniusLink (API)</label>
+            </div>
+            <div>
+              <label class="pr-field-label" for="pr-gl-key">API Key</label>
+              <input id="pr-gl-key" class="pr-input" type="password" placeholder="576f5f68..." spellcheck="false" autocomplete="off">
+            </div>
+            <div>
+              <label class="pr-field-label" for="pr-gl-secret">API Secret</label>
+              <input id="pr-gl-secret" class="pr-input" type="password" placeholder="d09e4052..." spellcheck="false" autocomplete="off">
+            </div>
+            <div>
+              <label class="pr-field-label" for="pr-gl-group">Group ID</label>
+              <input id="pr-gl-group" class="pr-input" type="number" placeholder="0" min="0">
+            </div>
+            <div>
+              <label class="pr-field-label" for="pr-gl-domain">Dominio (opcional)</label>
+              <input id="pr-gl-domain" class="pr-input" type="text" placeholder="geni.us" spellcheck="false">
             </div>
             <div class="pr-setting-full pr-check-grid">
               <label class="pr-check"><input id="pr-check-images" type="checkbox"> Descargar imagenes</label>
@@ -617,9 +634,12 @@
     document.getElementById('pr-check-related').checked = state.settings.includeRelatedVideos;
     document.getElementById('pr-check-open').checked = state.settings.autoOpenPanel;
     document.getElementById('pr-max-videos').value = String(state.settings.maxVideosPerProduct);
-    document.getElementById('pr-min-rating').value = String(state.settings.minRating);
-    document.getElementById('pr-min-reviews').value = state.settings.minReviews || '';
-    document.getElementById('pr-geniuslink-input').value = state.settings.geniusLinkPrefix;
+    document.getElementById('pr-min-rating').value  = String(state.settings.minRating);
+    document.getElementById('pr-min-reviews').value  = state.settings.minReviews || '';
+    document.getElementById('pr-gl-key').value       = state.settings.geniusLinkApiKey;
+    document.getElementById('pr-gl-secret').value    = state.settings.geniusLinkApiSecret;
+    document.getElementById('pr-gl-group').value     = state.settings.geniusLinkGroupId;
+    document.getElementById('pr-gl-domain').value    = state.settings.geniusLinkDomain;
   }
 
   function sanitizeFolderName(value) {
@@ -664,11 +684,35 @@
   }
 
   function getAffiliateUrl(asin) {
-    const baseUrl  = getProductBaseUrl(asin);
-    const tag      = state.settings.affiliateTag.trim();
-    const amazonUrl = tag ? `${baseUrl}/?tag=${encodeURIComponent(tag)}` : baseUrl;
-    const gl       = state.settings.geniusLinkPrefix.trim();
-    return gl ? `${gl}${encodeURIComponent(amazonUrl)}` : amazonUrl;
+    const baseUrl = getProductBaseUrl(asin);
+    const tag     = state.settings.affiliateTag.trim();
+    return tag ? `${baseUrl}/?tag=${encodeURIComponent(tag)}` : baseUrl;
+  }
+
+  function isGeniusLinkConfigured() {
+    return !!(
+      state.settings.geniusLinkApiKey.trim() &&
+      state.settings.geniusLinkApiSecret.trim()
+    );
+  }
+
+  // Llama al service worker para crear el link en GeniusLink.
+  // Devuelve el shortUrl o lanza un error con el mensaje de la API.
+  function createGeniusLinkUrl(asin) {
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({
+        action:         'createGeniusLink',
+        destinationUrl: getAffiliateUrl(asin),
+        apiKey:         state.settings.geniusLinkApiKey.trim(),
+        apiSecret:      state.settings.geniusLinkApiSecret.trim(),
+        groupId:        state.settings.geniusLinkGroupId,
+        domain:         state.settings.geniusLinkDomain.trim()
+      }, response => {
+        if (chrome.runtime.lastError) { reject(new Error(chrome.runtime.lastError.message)); return; }
+        if (!response?.success)       { reject(new Error(response?.error || 'Error GeniusLink')); return; }
+        resolve(response.shortUrl);
+      });
+    });
   }
 
   function getVisibleProducts() {
@@ -827,11 +871,29 @@
 
     document.querySelectorAll('.pr-btn[data-action="copy"]').forEach(button => {
       button.addEventListener('click', async () => {
-        try {
-          await navigator.clipboard.writeText(getAffiliateUrl(button.dataset.asin));
-          showNotification('Enlace copiado al portapapeles');
-        } catch (_) {
-          showNotification('No se pudo copiar el enlace');
+        const asin = button.dataset.asin;
+
+        if (isGeniusLinkConfigured()) {
+          const prev = button.textContent;
+          button.textContent = '…';
+          button.disabled = true;
+          try {
+            const shortUrl = await createGeniusLinkUrl(asin);
+            await navigator.clipboard.writeText(shortUrl);
+            showNotification('GeniusLink copiado ✓');
+          } catch (err) {
+            showNotification(`GeniusLink error: ${err.message}`);
+          } finally {
+            button.textContent = prev;
+            button.disabled = false;
+          }
+        } else {
+          try {
+            await navigator.clipboard.writeText(getAffiliateUrl(asin));
+            showNotification('Enlace copiado al portapapeles');
+          } catch (_) {
+            showNotification('No se pudo copiar el enlace');
+          }
         }
       });
     });
@@ -1208,9 +1270,10 @@
       render();
     });
 
-    document.getElementById('pr-geniuslink-input').addEventListener('change', event => {
-      saveSettings({ geniusLinkPrefix: event.target.value.trim() });
-    });
+    document.getElementById('pr-gl-key').addEventListener('change',    e => saveSettings({ geniusLinkApiKey:    e.target.value.trim() }));
+    document.getElementById('pr-gl-secret').addEventListener('change', e => saveSettings({ geniusLinkApiSecret: e.target.value.trim() }));
+    document.getElementById('pr-gl-group').addEventListener('change',  e => saveSettings({ geniusLinkGroupId:   e.target.value }));
+    document.getElementById('pr-gl-domain').addEventListener('change', e => saveSettings({ geniusLinkDomain:    e.target.value.trim() }));
 
     document.getElementById('pr-btn-add-all').addEventListener('click', () => {
       window.dispatchEvent(new CustomEvent('prodradar:requestAddAll'));

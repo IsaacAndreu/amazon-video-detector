@@ -409,5 +409,50 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  // ── GENIUSLINK ──────────────────────────────────────────────────────────────
+  // La llamada se hace desde el service worker (no desde el content script)
+  // para evitar restricciones CORS. Necesita host_permissions en manifest.json.
+
+  if (message.action === 'createGeniusLink') {
+    (async () => {
+      try {
+        const { destinationUrl, apiKey, apiSecret, groupId, domain } = message;
+
+        const params = new URLSearchParams({ url: destinationUrl });
+        if (groupId !== undefined && groupId !== '') params.set('groupId', String(groupId));
+        if (domain)                                  params.set('domain', domain);
+
+        const response = await fetch(
+          `https://api.geniuslink.com/v3/shorturls?${params.toString()}`,
+          {
+            method: 'POST',
+            headers: {
+              'X-Api-Key':    apiKey,
+              'X-Api-Secret': apiSecret,
+              'Accept':       'application/json'
+            }
+          }
+        );
+
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          sendResponse(buildError(body.message || `GeniusLink error ${response.status}`));
+          return;
+        }
+
+        const data = await response.json();
+        const { code, domain: linkDomain, baseDomain } = data.shortUrl || {};
+        const host     = linkDomain || baseDomain || 'geni.us';
+        const shortUrl = `https://${host}/${code}`;
+
+        sendResponse(buildSuccess({ shortUrl }));
+      } catch (error) {
+        sendResponse(buildError(error.message));
+      }
+    })();
+
+    return true;
+  }
+
   return false;
 });

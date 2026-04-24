@@ -19,7 +19,8 @@
     "https://www.amazon.fr/*",
     "https://www.amazon.it/*",
     "*://*.ssl-images-amazon.com/*",
-    "*://*.media-amazon.com/*"
+    "*://*.media-amazon.com/*",
+    "https://api.geniuslink.com/*"
   ],
   "action": {
     "default_popup": "popup.html",

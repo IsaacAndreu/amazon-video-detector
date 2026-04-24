@@ -120,10 +120,19 @@ function detectVideoInCurrentPageDOM() {
 
 // â”€â”€ GESTIÃ“N DE LA COLA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+function emitScanProgress() {
+  const values = [...videoCache.values()];
+  const checked = values.filter(v => v !== 'queued').length;
+  window.dispatchEvent(new CustomEvent('prodradar:scanprogress', {
+    detail: { checked, total: values.length }
+  }));
+}
+
 function queueProduct(asin, card) {
   if (videoCache.has(asin) || fetchPending.has(asin)) return;
   videoCache.set(asin, 'queued');
   fetchQueue.push({ asin, card });
+  emitScanProgress();
   processQueue();
 }
 
@@ -149,10 +158,10 @@ function processQueue() {
 }
 
 function updateCardBadge(card, asin, hasVideo) {
-  // Buscar el badge en el card (puede haber mÃ¡s de una instancia del mismo asin)
   document.querySelectorAll(`[data-asin="${asin}"] .${BADGE_CLASS}`).forEach(badge => {
     applyBadgeState(badge, hasVideo);
   });
+  emitScanProgress();
 }
 
 // â”€â”€ ESTADOS DEL BADGE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -250,16 +259,54 @@ function createAddButton(card) {
 
 // â”€â”€ EXTRAER DATOS DEL PRODUCTO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+function extractRating(card) {
+  // aria-label es el más fiable entre idiomas: "4.5 out of 5 stars", "4,5 de 5 estrellas"…
+  const el = card.querySelector(
+    'span[aria-label*="out of 5"], span[aria-label*="de 5"], ' +
+    'span[aria-label*="von 5"], span[aria-label*="su 5"], span[aria-label*="sur 5"]'
+  );
+  if (el) {
+    const m = (el.getAttribute('aria-label') || '').match(/(\d+[.,]\d+)/);
+    if (m) return parseFloat(m[1].replace(',', '.'));
+  }
+  // Fallback: texto del icono de estrellas
+  const alt = card.querySelector('.a-icon-alt');
+  if (alt) {
+    const m = alt.textContent.trim().match(/^(\d+[.,]\d+)/);
+    if (m) return parseFloat(m[1].replace(',', '.'));
+  }
+  return 0;
+}
+
+function extractReviewCount(card) {
+  // Clase específica de Amazon para el contador de reviews en resultados
+  for (const el of card.querySelectorAll('.a-size-base.s-underline-text')) {
+    const n = parseInt(el.textContent.replace(/[,.\s]/g, ''), 10);
+    if (n > 0) return n;
+  }
+  // Fallback: aria-label con número + palabra de valoraciones
+  for (const el of card.querySelectorAll('[aria-label]')) {
+    const label = el.getAttribute('aria-label') || '';
+    if (/\d/.test(label) && /(rating|valorac|Bewertung|recensi|avis)/i.test(label)) {
+      const m = label.replace(/[,.\s]/g, '').match(/(\d{2,})/);
+      if (m) return parseInt(m[1], 10);
+    }
+  }
+  return 0;
+}
+
 function extractProductData(card) {
-  const asin     = card.dataset.asin || card.getAttribute('data-asin') || '';
-  const titleEl  = card.querySelector('h2 a span, .a-text-normal, .a-size-base-plus');
-  const title    = titleEl?.textContent?.trim() || 'Sin titulo';
-  const imgEl    = card.querySelector('.s-image, img[src*="amazon"]');
-  const imageUrl = imgEl?.src || '';
-  const priceEl  = card.querySelector('.a-price .a-offscreen');
-  const price    = priceEl?.textContent?.trim() || '';
-  const hasVideo = videoCache.get(asin) === true;
-  return { asin, title, imageUrl, price, hasVideo, addedAt: Date.now() };
+  const asin        = card.dataset.asin || card.getAttribute('data-asin') || '';
+  const titleEl     = card.querySelector('h2 a span, .a-text-normal, .a-size-base-plus');
+  const title       = titleEl?.textContent?.trim() || 'Sin titulo';
+  const imgEl       = card.querySelector('.s-image, img[src*="amazon"]');
+  const imageUrl    = imgEl?.src || '';
+  const priceEl     = card.querySelector('.a-price .a-offscreen');
+  const price       = priceEl?.textContent?.trim() || '';
+  const hasVideo    = videoCache.get(asin) === true;
+  const rating      = extractRating(card);
+  const reviewCount = extractReviewCount(card);
+  return { asin, title, imageUrl, price, hasVideo, rating, reviewCount, addedAt: Date.now() };
 }
 
 // â”€â”€ WRAPPER DE IMAGEN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -442,6 +489,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 // â”€â”€ INICIO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+// Sidebar pide añadir al ranking todos los productos con vídeo ya detectados
+window.addEventListener('prodradar:requestAddAll', () => {
+  let added = 0;
+  videoCache.forEach((hasVideo, asin) => {
+    if (hasVideo !== true) return;
+    const card = document.querySelector(`[data-asin="${asin}"]`);
+    if (!card) return;
+    window.dispatchEvent(new CustomEvent('prodradar:add', { detail: extractProductData(card) }));
+    added++;
+  });
+  window.dispatchEvent(new CustomEvent('prodradar:addallresult', { detail: { added } }));
+});
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => { processProducts(); processProductPage(); });

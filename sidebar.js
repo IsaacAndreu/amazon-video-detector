@@ -10,10 +10,13 @@
   const DEFAULT_SETTINGS = {
     folderName: 'ranking',
     affiliateTag: '',
+    geniusLinkPrefix: '',
     autoOpenPanel: true,
     filterMode: 'all',
     sortMode: 'manual',
     searchQuery: '',
+    minRating: 0,
+    minReviews: 0,
     downloadImages: true,
     downloadVideos: true,
     includeRelatedVideos: false,
@@ -23,6 +26,7 @@
   let state = {
     products: [],
     settings: { ...DEFAULT_SETTINGS },
+    scan: { checked: 0, total: 0 },
     bulk: {
       jobId: '',
       total: 0,
@@ -163,14 +167,25 @@
       font-weight: 700 !important;
       color: #1e2a32 !important;
     }
+    #pr-scan-status {
+      font-size: 11px !important;
+      color: #61707a !important;
+      margin-top: 4px !important;
+      min-height: 16px !important;
+    }
+    #pr-scan-status.pr-scanning { color: #b45309 !important; }
+    #pr-scan-status.pr-scan-done { color: #1f7a3f !important; }
+    .pr-chip.rating { background: #fffbe6 !important; color: #92620a !important; }
+    .pr-chip.reviews { background: #f0f4ff !important; color: #3b5bdb !important; }
     #pr-toolbar {
       display: grid !important;
-      grid-template-columns: 1fr 120px 120px !important;
+      grid-template-columns: 1fr 1fr 1fr !important;
       gap: 8px !important;
       padding: 12px 16px !important;
       border-bottom: 1px solid rgba(30, 42, 50, 0.08) !important;
       background: rgba(255,255,255,0.58) !important;
     }
+    #pr-search-wrap { grid-column: 1 / -1 !important; }
     .pr-input, .pr-select {
       width: 100% !important;
       min-width: 0 !important;
@@ -466,6 +481,7 @@
               <span id="pr-kicker">ProdRadar</span>
               <h2 id="pr-title">Ranking board</h2>
               <div id="pr-subtitle">Filtra, ordena, exporta y descarga assets sin salir de Amazon.</div>
+              <div id="pr-scan-status"></div>
             </div>
             <button id="pr-close-btn" type="button" aria-label="Cerrar">x</button>
           </div>
@@ -485,7 +501,9 @@
           </div>
         </div>
         <div id="pr-toolbar">
-          <input id="pr-search" class="pr-input" type="search" placeholder="Buscar por titulo o ASIN">
+          <div id="pr-search-wrap">
+            <input id="pr-search" class="pr-input" type="search" placeholder="Buscar por titulo o ASIN" style="width:100%!important">
+          </div>
           <select id="pr-filter" class="pr-select">
             <option value="all">Todos</option>
             <option value="video">Solo video</option>
@@ -494,10 +512,20 @@
           <select id="pr-sort" class="pr-select">
             <option value="manual">Orden manual</option>
             <option value="recent">Mas recientes</option>
+            <option value="rating-desc">Mejor valoracion</option>
+            <option value="reviews-desc">Mas reviews</option>
             <option value="title">Titulo A-Z</option>
             <option value="price-desc">Precio alto</option>
             <option value="price-asc">Precio bajo</option>
           </select>
+          <select id="pr-min-rating" class="pr-select" title="Valoracion minima">
+            <option value="0">Todas ★</option>
+            <option value="3">Min. 3★</option>
+            <option value="4">Min. 4★</option>
+            <option value="4.5">Min. 4.5★</option>
+          </select>
+          <input id="pr-min-reviews" class="pr-input" type="number" min="0" placeholder="Min. reviews" title="Numero minimo de reviews">
+          <button id="pr-btn-add-all" class="pr-ghost" type="button" style="font-size:11px!important;padding:6px 8px!important">+ Añadir todos con video</button>
         </div>
         <div id="pr-status">Listo para capturar productos.</div>
         <div id="pr-progress-wrap">
@@ -529,6 +557,11 @@
                 <option value="5">5 videos</option>
                 <option value="0">Sin limite</option>
               </select>
+            </div>
+            <div class="pr-setting-full">
+              <label class="pr-field-label" for="pr-geniuslink-input">GeniusLink prefijo URL</label>
+              <input id="pr-geniuslink-input" class="pr-input" type="text" placeholder="https://geni.us/?url=" spellcheck="false"
+                style="font-size:11px!important">
             </div>
             <div class="pr-setting-full pr-check-grid">
               <label class="pr-check"><input id="pr-check-images" type="checkbox"> Descargar imagenes</label>
@@ -584,6 +617,9 @@
     document.getElementById('pr-check-related').checked = state.settings.includeRelatedVideos;
     document.getElementById('pr-check-open').checked = state.settings.autoOpenPanel;
     document.getElementById('pr-max-videos').value = String(state.settings.maxVideosPerProduct);
+    document.getElementById('pr-min-rating').value = String(state.settings.minRating);
+    document.getElementById('pr-min-reviews').value = state.settings.minReviews || '';
+    document.getElementById('pr-geniuslink-input').value = state.settings.geniusLinkPrefix;
   }
 
   function sanitizeFolderName(value) {
@@ -628,9 +664,11 @@
   }
 
   function getAffiliateUrl(asin) {
-    const baseUrl = getProductBaseUrl(asin);
-    const tag = state.settings.affiliateTag.trim();
-    return tag ? `${baseUrl}/?tag=${encodeURIComponent(tag)}` : baseUrl;
+    const baseUrl  = getProductBaseUrl(asin);
+    const tag      = state.settings.affiliateTag.trim();
+    const amazonUrl = tag ? `${baseUrl}/?tag=${encodeURIComponent(tag)}` : baseUrl;
+    const gl       = state.settings.geniusLinkPrefix.trim();
+    return gl ? `${gl}${encodeURIComponent(amazonUrl)}` : amazonUrl;
   }
 
   function getVisibleProducts() {
@@ -638,11 +676,16 @@
     const filter = state.settings.filterMode;
     const sort = state.settings.sortMode;
 
+    const minRating  = Number(state.settings.minRating)  || 0;
+    const minReviews = Number(state.settings.minReviews) || 0;
+
     let items = state.products
       .map((product, index) => ({ ...product, originalIndex: index }))
       .filter(product => {
         if (filter === 'video' && !product.hasVideo) return false;
         if (filter === 'no-video' && product.hasVideo) return false;
+        if (minRating  > 0 && (product.rating      || 0) < minRating)  return false;
+        if (minReviews > 0 && (product.reviewCount  || 0) < minReviews) return false;
         if (!query) return true;
         return `${product.title} ${product.asin}`.toLowerCase().includes(query);
       });
@@ -661,6 +704,10 @@
         if (Number.isNaN(bValue)) return -1;
         return aValue - bValue;
       });
+    } else if (sort === 'rating-desc') {
+      items = items.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+    } else if (sort === 'reviews-desc') {
+      items = items.sort((a, b) => (b.reviewCount || 0) - (a.reviewCount || 0));
     }
 
     return items;
@@ -710,7 +757,9 @@
             <div class="pr-meta">
               <span class="pr-chip ${product.hasVideo ? 'video' : ''}">${product.hasVideo ? 'Video' : 'Sin video'}</span>
               <span class="pr-chip">${escapeHtml(product.asin)}</span>
-              ${product.price ? `<span class="pr-chip">${escapeHtml(product.price)}</span>` : ''}
+              ${product.price       ? `<span class="pr-chip">${escapeHtml(product.price)}</span>` : ''}
+              ${product.rating      ? `<span class="pr-chip rating">★ ${product.rating.toFixed(1)}</span>` : ''}
+              ${product.reviewCount ? `<span class="pr-chip reviews">${product.reviewCount.toLocaleString()}</span>` : ''}
             </div>
             <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
               <a class="pr-link" href="${escapeHtml(getProductBaseUrl(product.asin))}" target="_blank" rel="noreferrer">Abrir producto</a>
@@ -1069,6 +1118,20 @@
     }
   }
 
+  function updateScanStatus() {
+    const el = document.getElementById('pr-scan-status');
+    if (!el) return;
+    const { checked, total } = state.scan;
+    if (total === 0) { el.textContent = ''; el.className = ''; return; }
+    if (checked < total) {
+      el.textContent = `Escaneando... ${checked} / ${total} productos`;
+      el.className = 'pr-scanning';
+    } else {
+      el.textContent = `Escaneo completado — ${total} productos revisados`;
+      el.className = 'pr-scan-done';
+    }
+  }
+
   function showNotification(message) {
     const toast = document.getElementById('pr-notification');
     if (!toast) return;
@@ -1133,6 +1196,35 @@
 
     document.getElementById('pr-max-videos').addEventListener('change', event => {
       saveSettings({ maxVideosPerProduct: Number(event.target.value) });
+    });
+
+    document.getElementById('pr-min-rating').addEventListener('change', event => {
+      saveSettings({ minRating: Number(event.target.value) });
+      render();
+    });
+
+    document.getElementById('pr-min-reviews').addEventListener('input', event => {
+      saveSettings({ minReviews: Number(event.target.value) || 0 });
+      render();
+    });
+
+    document.getElementById('pr-geniuslink-input').addEventListener('change', event => {
+      saveSettings({ geniusLinkPrefix: event.target.value.trim() });
+    });
+
+    document.getElementById('pr-btn-add-all').addEventListener('click', () => {
+      window.dispatchEvent(new CustomEvent('prodradar:requestAddAll'));
+      showNotification('Añadiendo productos con video al ranking...');
+    });
+
+    window.addEventListener('prodradar:addallresult', event => {
+      const { added } = event.detail;
+      showNotification(added > 0 ? `${added} productos añadidos` : 'No hay nuevos productos con video detectados aun');
+    });
+
+    window.addEventListener('prodradar:scanprogress', event => {
+      state.scan = event.detail;
+      updateScanStatus();
     });
 
     document.getElementById('pr-btn-download').addEventListener('click', startBulkDownload);

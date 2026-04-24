@@ -152,17 +152,6 @@ async function downloadHlsSegments(m3u8Url, onProgress) {
   return merged;
 }
 
-function toBase64(bytes) {
-  const chunkSize = 0x8000;
-  let binary = '';
-
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    binary += String.fromCharCode.apply(null, bytes.subarray(offset, offset + chunkSize));
-  }
-
-  return btoa(binary);
-}
-
 async function downloadHlsAsMp4(url, filename, reporter) {
   reporter.update('running', 'Resolviendo stream');
 
@@ -178,17 +167,27 @@ async function downloadHlsAsMp4(url, filename, reporter) {
   });
 
   reporter.update('running', 'Preparando archivo final', { percent: 92 });
-  const dataUrl = `data:video/mp4;base64,${toBase64(bytes)}`;
+
+  // Blob URL en lugar de base64: evita crear una string un 33% más grande que
+  // el vídeo y la copia de memoria que implica btoa(). Para un vídeo de 80 MB,
+  // base64 consumía ~320 MB de RAM; con Blob se reutiliza el mismo buffer.
+  const blob    = new Blob([bytes], { type: 'video/mp4' });
+  const blobUrl = URL.createObjectURL(blob);
 
   const downloadId = await new Promise((resolve, reject) => {
-    chrome.downloads.download({ url: dataUrl, filename, saveAs: false }, id => {
+    chrome.downloads.download({ url: blobUrl, filename, saveAs: false }, id => {
       if (chrome.runtime.lastError) {
+        URL.revokeObjectURL(blobUrl);
         reject(new Error(chrome.runtime.lastError.message));
         return;
       }
       resolve(id);
     });
   });
+
+  // Revocar tras 60 s: tiempo suficiente para que la descarga arranque,
+  // pero libera la referencia al Blob para que el GC recupere la memoria.
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
 
   reporter.update('completed', 'Video descargado', { percent: 100 });
   return downloadId;

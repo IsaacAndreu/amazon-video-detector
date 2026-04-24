@@ -383,11 +383,28 @@ function findVideosOnPage() {
 
 // â”€â”€ MUTATION OBSERVER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+// Guardamos la referencia para poder desconectar el observer cuando ya no haga falta.
+//
+// En páginas de búsqueda/listado se mantiene activo (necesario para scroll infinito).
+// En páginas de producto (/dp/) se desconecta en cuanto el badge está colocado:
+// el JS propio de Amazon dispara cientos de mutaciones pero ya no tenemos nada que
+// procesar, así que observar el DOM entero con subtree:true es trabajo inútil.
 let debounce = null;
-new MutationObserver(() => {
+const domObserver = new MutationObserver(() => {
   clearTimeout(debounce);
-  debounce = setTimeout(() => { processProducts(); processProductPage(); }, 600);
-}).observe(document.body, { childList: true, subtree: true });
+  debounce = setTimeout(() => {
+    processProducts();
+    processProductPage();
+
+    if (
+      /\/(?:dp|gp\/product)\//.test(location.pathname) &&
+      document.querySelector('.' + BADGE_CLASS)
+    ) {
+      domObserver.disconnect();
+    }
+  }, 600);
+});
+domObserver.observe(document.body, { childList: true, subtree: true });
 
 // â”€â”€ MENSAJES DEL POPUP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 

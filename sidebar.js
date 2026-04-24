@@ -16,7 +16,8 @@
     searchQuery: '',
     downloadImages: true,
     downloadVideos: true,
-    includeRelatedVideos: false
+    includeRelatedVideos: false,
+    maxVideosPerProduct: 1
   };
 
   let state = {
@@ -29,7 +30,8 @@
       failed: 0,
       message: '',
       active: false,
-      itemStates: {}
+      itemStates: {},
+      itemMessages: {}
     }
   };
 
@@ -325,9 +327,48 @@
       border-top: 1px solid rgba(30, 42, 50, 0.08) !important;
       background: rgba(255,255,255,0.72) !important;
     }
+    #pr-progress-wrap {
+      margin: 0 16px 10px !important;
+      display: none !important;
+    }
+    #pr-progress-wrap.pr-active { display: block !important; }
+    #pr-progress-track {
+      height: 7px !important;
+      border-radius: 999px !important;
+      background: rgba(30,42,50,0.1) !important;
+      overflow: hidden !important;
+    }
+    #pr-progress-fill {
+      height: 100% !important;
+      border-radius: 999px !important;
+      background: linear-gradient(90deg, #d86a1c 0%, #a94f11 100%) !important;
+      transition: width 0.4s ease !important;
+      width: 0% !important;
+    }
+    #pr-progress-label {
+      display: flex !important;
+      justify-content: space-between !important;
+      margin-top: 5px !important;
+      font-size: 11px !important;
+      color: #61707a !important;
+    }
+    .pr-dl-badge {
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 3px !important;
+      padding: 2px 8px !important;
+      border-radius: 999px !important;
+      font-size: 10px !important;
+      font-weight: 700 !important;
+      margin-top: 5px !important;
+      letter-spacing: 0.02em !important;
+    }
+    .pr-dl-running { background: #fff3e0 !important; color: #b45309 !important; }
+    .pr-dl-completed { background: #eaf4ed !important; color: #1f7a3f !important; }
+    .pr-dl-failed { background: #fef2f2 !important; color: #b91c1c !important; }
     #pr-settings {
       display: grid !important;
-      grid-template-columns: 1fr 1fr !important;
+      grid-template-columns: 1fr 1fr 1fr !important;
       gap: 8px !important;
       margin-bottom: 10px !important;
     }
@@ -459,6 +500,15 @@
           </select>
         </div>
         <div id="pr-status">Listo para capturar productos.</div>
+        <div id="pr-progress-wrap">
+          <div id="pr-progress-track">
+            <div id="pr-progress-fill"></div>
+          </div>
+          <div id="pr-progress-label">
+            <span id="pr-progress-text">0 / 0 completados</span>
+            <span id="pr-progress-pct">0%</span>
+          </div>
+        </div>
         <div id="pr-list"></div>
         <div id="pr-footer">
           <div id="pr-settings">
@@ -469,6 +519,16 @@
             <div>
               <label class="pr-field-label" for="pr-tag-input">Tag afiliado</label>
               <input id="pr-tag-input" class="pr-input" type="text" placeholder="mitag-21" spellcheck="false">
+            </div>
+            <div>
+              <label class="pr-field-label" for="pr-max-videos">Max. videos/producto</label>
+              <select id="pr-max-videos" class="pr-select">
+                <option value="1">1 (solo vendedor)</option>
+                <option value="2">2 videos</option>
+                <option value="3">3 videos</option>
+                <option value="5">5 videos</option>
+                <option value="0">Sin limite</option>
+              </select>
             </div>
             <div class="pr-setting-full pr-check-grid">
               <label class="pr-check"><input id="pr-check-images" type="checkbox"> Descargar imagenes</label>
@@ -523,6 +583,7 @@
     document.getElementById('pr-check-videos').checked = state.settings.downloadVideos;
     document.getElementById('pr-check-related').checked = state.settings.includeRelatedVideos;
     document.getElementById('pr-check-open').checked = state.settings.autoOpenPanel;
+    document.getElementById('pr-max-videos').value = String(state.settings.maxVideosPerProduct);
   }
 
   function sanitizeFolderName(value) {
@@ -631,40 +692,78 @@
       state.settings.filterMode === 'all' &&
       !state.settings.searchQuery.trim();
 
-    list.innerHTML = visibleProducts.map((product, index) => `
-      <article class="pr-item ${draggable ? 'pr-draggable' : ''}" data-asin="${escapeHtml(product.asin)}" ${draggable ? 'draggable="true"' : ''}>
-        <div class="pr-pos">${index + 1}</div>
-        <img class="pr-thumb" src="${escapeHtml(product.imageUrl || '')}" alt="" onerror="this.style.display='none'">
-        <div class="pr-info">
-          <div class="pr-title">${escapeHtml(product.title || 'Producto sin titulo')}</div>
-          <div class="pr-meta">
-            <span class="pr-chip ${product.hasVideo ? 'video' : ''}">${product.hasVideo ? 'Video' : 'Sin video'}</span>
-            <span class="pr-chip">${escapeHtml(product.asin)}</span>
-            ${product.price ? `<span class="pr-chip">${escapeHtml(product.price)}</span>` : ''}
+    list.innerHTML = visibleProducts.map((product, index) => {
+      const videoState   = state.bulk.itemStates[`video-${product.asin}`];
+      const videoMsg     = state.bulk.itemMessages[`video-${product.asin}`] || '';
+      const dlBadge = videoState ? (() => {
+        if (videoState === 'running')   return `<span class="pr-dl-badge pr-dl-running">⏳ ${escapeHtml(videoMsg) || 'Descargando...'}</span>`;
+        if (videoState === 'completed') return `<span class="pr-dl-badge pr-dl-completed">✓ ${escapeHtml(videoMsg) || 'Descargado'}</span>`;
+        return `<span class="pr-dl-badge pr-dl-failed">✗ Error</span>`;
+      })() : '';
+
+      return `
+        <article class="pr-item ${draggable ? 'pr-draggable' : ''}" data-asin="${escapeHtml(product.asin)}" ${draggable ? 'draggable="true"' : ''}>
+          <div class="pr-pos">${index + 1}</div>
+          <img class="pr-thumb" src="${escapeHtml(product.imageUrl || '')}" alt="" onerror="this.style.display='none'">
+          <div class="pr-info">
+            <div class="pr-title">${escapeHtml(product.title || 'Producto sin titulo')}</div>
+            <div class="pr-meta">
+              <span class="pr-chip ${product.hasVideo ? 'video' : ''}">${product.hasVideo ? 'Video' : 'Sin video'}</span>
+              <span class="pr-chip">${escapeHtml(product.asin)}</span>
+              ${product.price ? `<span class="pr-chip">${escapeHtml(product.price)}</span>` : ''}
+            </div>
+            <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
+              <a class="pr-link" href="${escapeHtml(getProductBaseUrl(product.asin))}" target="_blank" rel="noreferrer">Abrir producto</a>
+              <span class="pr-price">${escapeHtml(product.price || 'Sin precio')}</span>
+            </div>
+            ${dlBadge}
           </div>
-          <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
-            <a class="pr-link" href="${escapeHtml(getProductBaseUrl(product.asin))}" target="_blank" rel="noreferrer">Abrir producto</a>
-            <span class="pr-price">${escapeHtml(product.price || 'Sin precio')}</span>
+          <div class="pr-actions">
+            <button class="pr-btn" data-action="copy" data-asin="${escapeHtml(product.asin)}" title="Copiar enlace">Ln</button>
+            <button class="pr-btn" data-action="remove" data-asin="${escapeHtml(product.asin)}" title="Quitar">X</button>
           </div>
-        </div>
-        <div class="pr-actions">
-          <button class="pr-btn" data-action="copy" data-asin="${escapeHtml(product.asin)}" title="Copiar enlace">Ln</button>
-          <button class="pr-btn" data-action="remove" data-asin="${escapeHtml(product.asin)}" title="Quitar">X</button>
-        </div>
-      </article>
-    `).join('');
+        </article>
+      `;
+    }).join('');
 
     if (draggable) bindDragAndDrop();
     bindItemButtons();
   }
 
   function buildStatusLine() {
-    if (!state.bulk.active) {
+    if (!state.bulk.active && !Object.keys(state.bulk.itemStates).length) {
       return `${state.products.length} productos guardados. Ajusta filtros, exporta o descarga assets.`;
     }
 
-    const percent = state.bulk.total ? Math.round(((state.bulk.completed + state.bulk.failed) / state.bulk.total) * 100) : 0;
-    return `Descarga en curso: ${state.bulk.completed}/${state.bulk.total} completados, ${state.bulk.failed} con error. ${state.bulk.message || `${percent}%`}`;
+    if (!state.bulk.active) {
+      const errors = state.bulk.failed;
+      return errors
+        ? `Descarga terminada con ${errors} error${errors > 1 ? 'es' : ''}.`
+        : `Descarga completada — ${state.bulk.completed} asset${state.bulk.completed !== 1 ? 's' : ''} guardados.`;
+    }
+
+    const done = state.bulk.completed + state.bulk.failed;
+    const percent = state.bulk.total ? Math.round((done / state.bulk.total) * 100) : 0;
+    return `Descargando: ${done} / ${state.bulk.total} (${percent}%) — ${state.bulk.message || ''}`;
+  }
+
+  function updateProgressBar() {
+    const wrap = document.getElementById('pr-progress-wrap');
+    const fill = document.getElementById('pr-progress-fill');
+    const text = document.getElementById('pr-progress-text');
+    const pct  = document.getElementById('pr-progress-pct');
+    if (!wrap) return;
+
+    const hasActivity = state.bulk.active || Object.keys(state.bulk.itemStates).length > 0;
+    wrap.classList.toggle('pr-active', hasActivity);
+
+    const done    = state.bulk.completed + state.bulk.failed;
+    const total   = state.bulk.total || 1;
+    const percent = Math.round((done / total) * 100);
+
+    if (fill) fill.style.width = `${percent}%`;
+    if (text) text.textContent = `${state.bulk.completed} / ${state.bulk.total} completados${state.bulk.failed ? `, ${state.bulk.failed} con error` : ''}`;
+    if (pct)  pct.textContent  = `${percent}%`;
   }
 
   function bindItemButtons() {
@@ -857,8 +956,10 @@
       failed: 0,
       message: 'Preparando assets',
       active: true,
-      itemStates: {}
+      itemStates: {},
+      itemMessages: {}
     };
+    updateProgressBar();
     render();
 
     state.products.forEach((product, index) => {
@@ -887,6 +988,7 @@
           asin: product.asin,
           origin: location.origin,
           includeRelated: state.settings.includeRelatedVideos,
+          maxVideos: Number(state.settings.maxVideosPerProduct) || 0,
           filename: `${folder}/${safeTitle}`,
           job: {
             jobId,
@@ -905,19 +1007,21 @@
     if (message.action !== 'jobProgress') return;
     if (!state.bulk.active || message.jobId !== state.bulk.jobId) return;
 
-    state.bulk.itemStates[message.itemId] = message.status;
+    state.bulk.itemStates[message.itemId]   = message.status;
+    state.bulk.itemMessages[message.itemId] = message.message || '';
     state.bulk.message = `${message.label || 'Asset'}: ${message.message || message.status}`;
-    state.bulk.completed = Object.values(state.bulk.itemStates).filter(status => status === 'completed').length;
-    state.bulk.failed = Object.values(state.bulk.itemStates).filter(status => status === 'failed').length;
+    state.bulk.completed = Object.values(state.bulk.itemStates).filter(s => s === 'completed').length;
+    state.bulk.failed    = Object.values(state.bulk.itemStates).filter(s => s === 'failed').length;
 
     if (state.bulk.completed + state.bulk.failed >= state.bulk.total) {
       state.bulk.active = false;
-      state.bulk.message = state.bulk.failed
-        ? `Proceso terminado con ${state.bulk.failed} errores`
-        : 'Descarga completada';
-      showNotification(state.bulk.message);
+      const notif = state.bulk.failed
+        ? `Terminado con ${state.bulk.failed} error${state.bulk.failed > 1 ? 'es' : ''}`
+        : `Completado — ${state.bulk.completed} asset${state.bulk.completed !== 1 ? 's' : ''} descargados`;
+      showNotification(notif);
     }
 
+    updateProgressBar();
     render();
   }
 
@@ -981,6 +1085,10 @@
 
     document.getElementById('pr-check-open').addEventListener('change', event => {
       saveSettings({ autoOpenPanel: event.target.checked });
+    });
+
+    document.getElementById('pr-max-videos').addEventListener('change', event => {
+      saveSettings({ maxVideosPerProduct: Number(event.target.value) });
     });
 
     document.getElementById('pr-btn-download').addEventListener('click', startBulkDownload);

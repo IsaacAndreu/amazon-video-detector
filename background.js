@@ -280,12 +280,15 @@ function productPageCandidates(origin, asin) {
   ];
 }
 
-async function getDownloadableVideosForAsin(asin, origin, includeRelated) {
+async function getDownloadableVideosForAsin(asin, origin, includeRelated, maxVideos = 0) {
   for (const pageUrl of productPageCandidates(origin, asin)) {
     try {
       const videos = await getAllProductVideos(pageUrl);
       if (!videos.length) continue;
-      return includeRelated ? videos : videos.filter(video => !video.title && !video.creator);
+
+      const filtered = includeRelated ? videos : videos.filter(video => !video.title && !video.creator);
+      // maxVideos 0 = sin límite; si hay límite, cortar la lista
+      return maxVideos > 0 ? filtered.slice(0, maxVideos) : filtered;
     } catch (_) {
       continue;
     }
@@ -341,7 +344,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         const videos = await getDownloadableVideosForAsin(
           message.asin,
           message.origin,
-          Boolean(message.includeRelated)
+          Boolean(message.includeRelated),
+          Number(message.maxVideos) || 0
         );
 
         if (!videos.length) {
@@ -362,8 +366,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           downloadIds.push(downloadId);
         }
 
-        reporter.update('completed', `Descargados ${downloadIds.length} videos`, { percent: 100 });
-        sendResponse(buildSuccess({ count: downloadIds.length, downloadIds }));
+        const n = downloadIds.length;
+        reporter.update('completed', `${n} video${n !== 1 ? 's' : ''} descargado${n !== 1 ? 's' : ''}`, { percent: 100 });
+        sendResponse(buildSuccess({ count: n, downloadIds }));
       } catch (error) {
         reporter.update('failed', error.message, { percent: 100 });
         sendResponse(buildError(error.message));

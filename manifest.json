@@ -1,14 +1,15 @@
 ﻿{
   "manifest_version": 3,
   "name": "ProdRadar",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Detecta videos de productos en Amazon, crea rankings y descarga assets en bloque.",
   "permissions": [
     "downloads",
     "activeTab",
     "scripting",
     "storage",
-    "tabs"
+    "tabs",
+    "offscreen"
   ],
   "host_permissions": [
     "https://www.amazon.com/*",

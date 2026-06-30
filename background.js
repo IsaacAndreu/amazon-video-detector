@@ -37,6 +37,7 @@ function buildSuccess(extra = {}) {
 
 function createJobReporter(job = {}) {
   return {
+    job,
     update(status, message, extra = {}) {
       if (!job.jobId) return;
       chrome.runtime.sendMessage({
@@ -78,147 +79,107 @@ function sanitizeDownloadPath(filename, fallback = 'amazon-video') {
   return [...safeParts, safeBase].join('/');
 }
 
-function resolveUrl(path, base) {
-  if (!path) return null;
-  if (path.startsWith('http')) return path;
-  try {
-    return new URL(path, base).href;
-  } catch (_) {
-    return null;
-  }
-}
+let creatingOffscreenDocument = null;
 
-async function fetchText(url) {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status} while fetching ${url}`);
-  }
-  return response.text();
-}
-
-async function resolveVariantPlaylist(m3u8Url) {
-  const text = await fetchText(m3u8Url);
-  if (!text.includes('#EXT-X-STREAM-INF')) {
-    return { variantUrl: m3u8Url, text };
+async function hasOffscreenDocument() {
+  if (chrome.offscreen?.hasDocument) {
+    return chrome.offscreen.hasDocument();
   }
 
-  let fallback = null;
-  let bestH264 = null;
+  if (!chrome.runtime.getContexts) return false;
 
-  const lines = text.split('\n');
-  for (let index = 0; index < lines.length; index += 1) {
-    if (!lines[index].startsWith('#EXT-X-STREAM-INF')) continue;
-
-    const bandwidth = parseInt(lines[index].match(/BANDWIDTH=(\d+)/)?.[1] || '0', 10);
-    const codecs = lines[index].match(/CODECS="([^"]+)"/)?.[1] || '';
-    const uri = lines.slice(index + 1).find(line => line.trim() && !line.startsWith('#'))?.trim();
-    if (!uri) continue;
-
-    const candidate = { bandwidth, uri };
-    if (!fallback || candidate.bandwidth > fallback.bandwidth) fallback = candidate;
-    if (!/hvc1|hev1/i.test(codecs) && (!bestH264 || candidate.bandwidth > bestH264.bandwidth)) {
-      bestH264 = candidate;
-    }
-  }
-
-  const chosen = bestH264 || fallback;
-  if (!chosen) {
-    throw new Error('No compatible stream variant was found');
-  }
-
-  const variantUrl = resolveUrl(chosen.uri, m3u8Url);
-  return { variantUrl, text: await fetchText(variantUrl) };
-}
-
-async function downloadHlsSegments(m3u8Url, onProgress) {
-  const { variantUrl, text } = await resolveVariantPlaylist(m3u8Url);
-  const mapMatch = text.match(/#EXT-X-MAP:URI="([^"]+)"/);
-  const initUrl = mapMatch ? resolveUrl(mapMatch[1], variantUrl) : null;
-
-  const mediaSegments = text.split('\n')
-    .filter(line => line.trim() && !line.startsWith('#'))
-    .map(line => resolveUrl(line.trim(), variantUrl))
-    .filter(Boolean);
-
-  if (!mediaSegments.length) {
-    throw new Error('No downloadable segments were found in the playlist');
-  }
-
-  const urls = initUrl ? [initUrl, ...mediaSegments] : mediaSegments;
-  const buffers = new Array(urls.length);
-  let completedSegments = 0;
-
-  onProgress?.({ stage: 'segments', completedSegments, totalSegments: urls.length });
-
-  const batchSize = 5;
-  for (let start = 0; start < urls.length; start += batchSize) {
-    const batch = urls.slice(start, start + batchSize);
-    await Promise.all(batch.map((segmentUrl, offset) => fetch(segmentUrl)
-      .then(response => {
-        if (!response.ok) {
-          throw new Error(`Segment could not be downloaded: ${segmentUrl}`);
-        }
-        return response.arrayBuffer();
-      })
-      .then(buffer => {
-        buffers[start + offset] = buffer;
-        completedSegments += 1;
-        onProgress?.({ stage: 'segments', completedSegments, totalSegments: urls.length });
-      })));
-  }
-
-  const totalBytes = buffers.reduce((sum, buffer) => sum + buffer.byteLength, 0);
-  const merged = new Uint8Array(totalBytes);
-  let cursor = 0;
-
-  buffers.forEach(buffer => {
-    merged.set(new Uint8Array(buffer), cursor);
-    cursor += buffer.byteLength;
+  const contexts = await chrome.runtime.getContexts({
+    contextTypes: ['OFFSCREEN_DOCUMENT'],
+    documentUrls: [chrome.runtime.getURL('offscreen.html')]
   });
 
-  return merged;
+  return contexts.length > 0;
 }
 
-function toBase64(bytes) {
-  // URL.createObjectURL no está disponible en service workers de MV3,
-  // así que usamos base64 + data URL, que sí acepta chrome.downloads.download.
-  const chunkSize = 0x8000;
-  let binary = '';
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    binary += String.fromCharCode.apply(null, bytes.subarray(offset, offset + chunkSize));
-  }
-  return btoa(binary);
-}
+async function ensureOffscreenDocument() {
+  if (await hasOffscreenDocument()) return;
+  if (creatingOffscreenDocument) return creatingOffscreenDocument;
 
-async function downloadHlsAsMp4(url, filename, reporter) {
-  reporter.update('running', 'Resolviendo stream');
-
-  const bytes = await downloadHlsSegments(url, progress => {
-    if (progress.stage !== 'segments') return;
-    const { completedSegments, totalSegments } = progress;
-    const percent = Math.max(5, Math.round((completedSegments / totalSegments) * 85));
-    reporter.update(
-      'running',
-      `Descargando segmentos ${completedSegments}/${totalSegments}`,
-      { percent }
-    );
+  creatingOffscreenDocument = chrome.offscreen.createDocument({
+    url: 'offscreen.html',
+    reasons: ['BLOBS'],
+    justification: 'Assemble Amazon HLS video segments into downloadable MP4 blobs.'
+  }).finally(() => {
+    creatingOffscreenDocument = null;
   });
 
-  reporter.update('running', 'Preparando archivo final', { percent: 92 });
-  const dataUrl = `data:video/mp4;base64,${toBase64(bytes)}`;
+  return creatingOffscreenDocument;
+}
 
-  const downloadId = await new Promise((resolve, reject) => {
-    chrome.downloads.download({ url: dataUrl, filename, saveAs: false }, id => {
+function sendOffscreenMessage(message) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(message, response => {
       if (chrome.runtime.lastError) {
         reject(new Error(chrome.runtime.lastError.message));
         return;
       }
-      resolve(id);
+
+      if (!response?.success) {
+        reject(new Error(response?.error || 'Offscreen media worker failed'));
+        return;
+      }
+
+      resolve(response);
     });
   });
+}
 
-  reporter.update('completed', 'Video descargado', { percent: 100 });
-  return downloadId;
+async function assembleHlsInOffscreen(url, job) {
+  await ensureOffscreenDocument();
+  return sendOffscreenMessage({
+    action: 'assembleHlsVideo',
+    url,
+    job
+  });
+}
+
+async function revokeOffscreenObjectUrl(objectUrl) {
+  if (!objectUrl) return;
+
+  try {
+    await ensureOffscreenDocument();
+    await sendOffscreenMessage({
+      action: 'revokeObjectUrl',
+      objectUrl
+    });
+  } catch (_) {
+    // Best-effort cleanup. The object URL also disappears when the offscreen
+    // document is closed, but explicit revocation avoids memory growth.
+  }
+}
+
+async function downloadHlsAsMp4(url, filename, reporter) {
+  let objectUrl = '';
+
+  try {
+    reporter.update('queued', 'Esperando turno de descarga', { percent: 0 });
+    reporter.update('running', 'Preparando worker de video', { percent: 5 });
+
+    const assembled = await assembleHlsInOffscreen(url, reporter.job || {});
+    objectUrl = assembled.objectUrl;
+
+    reporter.update('running', 'Confirmando descarga en Chrome', { percent: 95 });
+    const downloadId = await new Promise((resolve, reject) => {
+      chrome.downloads.download({ url: objectUrl, filename, saveAs: false }, id => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
+        }
+        resolve(id);
+      });
+    });
+
+    reporter.update('completed', 'Video descargado', { percent: 100 });
+    return downloadId;
+  } finally {
+    await revokeOffscreenObjectUrl(objectUrl);
+    objectUrl = '';
+  }
 }
 
 async function fetchProductHtml(pageUrl) {

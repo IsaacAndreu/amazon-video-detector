@@ -6,13 +6,17 @@
 const BADGE_CLASS     = 'amz-vid-badge';
 const PROCESSED_CLASS = 'amz-vid-processed';
 const ADD_BTN_CLASS   = 'amz-add-btn';
+const PRODUCT_CARD_SELECTOR = '[data-asin], [data-component-type="s-search-result"], li[data-asin]';
+const MUTATION_DEBOUNCE_MS = 250;
 
 // â”€â”€ COLA DE FETCHES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-const videoCache   = new Map();   // asin â†’ true | false | null
-const fetchPending = new Map();   // asin â†’ Promise (para no duplicar)
-const fetchQueue   = [];          // [{asin, card}] esperando turno
-let   activeFetches = 0;
-const MAX_CONCURRENT = 3;         // MÃ¡ximo simultÃ¡neo para no sobrecargar
+const videoCache     = new Map();   // asin -> true | false | null | 'queued'
+const analyzedAsins  = new Set();   // asin ya comprobados: evita reanalizar en scroll/filtros
+const fetchPending   = new Map();   // asin â†’ Promise (para no duplicar)
+const fetchQueue     = [];          // [{asin, card}] esperando turno
+const processedCards = new WeakSet();
+let   activeFetches  = 0;
+const MAX_CONCURRENT = 3;         // Maximo simultaneo para no sobrecargar
 
 // â”€â”€ COMPROBAR VÃDEO FETCHING LA PÃGINA DE PRODUCTO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -129,7 +133,13 @@ function emitScanProgress() {
 }
 
 function queueProduct(asin, card) {
+  if (analyzedAsins.has(asin)) {
+    updateCardBadge(card, asin, videoCache.get(asin));
+    return;
+  }
+
   if (videoCache.has(asin) || fetchPending.has(asin)) return;
+
   videoCache.set(asin, 'queued');
   fetchQueue.push({ asin, card });
   emitScanProgress();
@@ -145,13 +155,22 @@ function processQueue() {
 
     activeFetches++;
 
-    const promise = doFetchCheck(asin).then(hasVideo => {
-      activeFetches--;
-      fetchPending.delete(asin);
-      videoCache.set(asin, hasVideo);
-      updateCardBadge(card, asin, hasVideo);
-      processQueue();
-    });
+    const promise = doFetchCheck(asin)
+      .then(hasVideo => {
+        videoCache.set(asin, hasVideo);
+        analyzedAsins.add(asin);
+        updateCardBadge(card, asin, hasVideo);
+      })
+      .catch(() => {
+        videoCache.set(asin, null);
+        analyzedAsins.add(asin);
+        updateCardBadge(card, asin, null);
+      })
+      .finally(() => {
+        activeFetches--;
+        fetchPending.delete(asin);
+        processQueue();
+      });
 
     fetchPending.set(asin, promise);
   }
@@ -346,18 +365,39 @@ const visibilityObserver = new IntersectionObserver(
 
 // â”€â”€ PROCESAR PRODUCTS DE BÃšSQUEDA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-function processProducts() {
-  const cards = document.querySelectorAll(`
-    [data-asin]:not(.${PROCESSED_CLASS}),
-    [data-component-type="s-search-result"]:not(.${PROCESSED_CLASS}),
-    li[data-asin]:not(.${PROCESSED_CLASS})
-  `);
+function getCardAsin(card) {
+  return (card.dataset.asin || card.getAttribute('data-asin') || '').trim();
+}
+
+function addProductCardsFromRoot(root, cards) {
+  if (!root) return;
+
+  if (root.nodeType === Node.ELEMENT_NODE) {
+    if (!root.isConnected) return;
+    if (root.matches(PRODUCT_CARD_SELECTOR)) cards.add(root);
+
+    const closestCard = root.closest(PRODUCT_CARD_SELECTOR);
+    if (closestCard) cards.add(closestCard);
+  }
+
+  if (root.querySelectorAll) {
+    root.querySelectorAll(PRODUCT_CARD_SELECTOR).forEach(card => cards.add(card));
+  }
+}
+
+function collectProductCards(root = document) {
+  const cards = new Set();
+  const roots = Array.isArray(root) ? root : [root];
+  roots.forEach(item => addProductCardsFromRoot(item, cards));
+  return cards;
+}
+
+function processProducts(root = document) {
+  const cards = collectProductCards(root);
 
   cards.forEach(card => {
-    const asin = (card.dataset.asin || card.getAttribute('data-asin') || '').trim();
-    if (!asin) return;
-
-    card.classList.add(PROCESSED_CLASS);
+    const asin = getCardAsin(card);
+    if (!asin || processedCards.has(card)) return;
 
     const imgWrapper = findImageWrapper(card);
     if (!imgWrapper) return;
@@ -367,21 +407,33 @@ function processProducts() {
     if (!imgWrapper.style.position || imgWrapper.style.position === 'static') {
       imgWrapper.style.position = 'relative';
     }
-    if (imgWrapper.querySelector('.' + BADGE_CLASS)) return;
 
-    // Badge en estado "cargando"
-    imgWrapper.appendChild(createBadge());
+    let badge = imgWrapper.querySelector('.' + BADGE_CLASS);
+    if (!badge) {
+      badge = createBadge();
+      imgWrapper.appendChild(badge);
+    }
 
-    // BotÃ³n + Ranking
-    const addBtn = createAddButton(card);
-    imgWrapper.appendChild(addBtn);
-    imgWrapper.addEventListener('mouseenter', () => { addBtn.style.opacity = '1'; });
-    imgWrapper.addEventListener('mouseleave', () => { addBtn.style.opacity = '0'; });
+    if (!imgWrapper.querySelector('.' + ADD_BTN_CLASS)) {
+      const addBtn = createAddButton(card);
+      imgWrapper.appendChild(addBtn);
+      imgWrapper.addEventListener('mouseenter', () => { addBtn.style.opacity = '1'; });
+      imgWrapper.addEventListener('mouseleave', () => { addBtn.style.opacity = '0'; });
+    }
 
-    // Registrar para carga lazy
+    processedCards.add(card);
+    card.classList.add(PROCESSED_CLASS);
+
+    if (analyzedAsins.has(asin)) {
+      applyBadgeState(badge, videoCache.get(asin));
+      return;
+    }
+
+    // Registrar para carga lazy solo si este ASIN todavia no fue analizado.
     visibilityObserver.observe(card);
   });
 }
+
 
 // â”€â”€ PÃGINA DE PRODUCTO INDIVIDUAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -436,22 +488,48 @@ function findVideosOnPage() {
 // En páginas de producto (/dp/) se desconecta en cuanto el badge está colocado:
 // el JS propio de Amazon dispara cientos de mutaciones pero ya no tenemos nada que
 // procesar, así que observar el DOM entero con subtree:true es trabajo inútil.
-let debounce = null;
-const domObserver = new MutationObserver(() => {
-  clearTimeout(debounce);
-  debounce = setTimeout(() => {
-    processProducts();
-    processProductPage();
+let mutationDebounce = null;
+const pendingProductRoots = new Set();
 
-    if (
-      /\/(?:dp|gp\/product)\//.test(location.pathname) &&
-      document.querySelector('.' + BADGE_CLASS)
-    ) {
-      domObserver.disconnect();
-    }
-  }, 600);
+function flushProductMutations() {
+  const roots = [...pendingProductRoots];
+  pendingProductRoots.clear();
+
+  roots.forEach(root => processProducts(root));
+  processProductPage();
+
+  if (
+    /\/(?:dp|gp\/product)\//.test(location.pathname) &&
+    document.querySelector('.' + BADGE_CLASS)
+  ) {
+    domObserver.disconnect();
+  }
+}
+
+const domObserver = new MutationObserver(mutations => {
+  let hasNewNodes = false;
+
+  mutations.forEach(mutation => {
+    mutation.addedNodes.forEach(node => {
+      if (
+        node.nodeType !== Node.ELEMENT_NODE &&
+        node.nodeType !== Node.DOCUMENT_FRAGMENT_NODE
+      ) {
+        return;
+      }
+
+      pendingProductRoots.add(node);
+      hasNewNodes = true;
+    });
+  });
+
+  if (!hasNewNodes) return;
+
+  clearTimeout(mutationDebounce);
+  mutationDebounce = setTimeout(flushProductMutations, MUTATION_DEBOUNCE_MS);
 });
 domObserver.observe(document.body, { childList: true, subtree: true });
+
 
 // â”€â”€ MENSAJES DEL POPUP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 

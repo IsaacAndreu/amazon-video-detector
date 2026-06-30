@@ -1,4 +1,31 @@
-﻿const PRODUCT_PATH_RE = /\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i;
+﻿const MAX_CONCURRENT_DOWNLOADS = 2;
+const PRODUCT_PATH_RE = /\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i;
+
+
+const videoDownloadQueue = [];
+let activeVideoDownloads = 0;
+
+function enqueueVideoDownload(task) {
+  return new Promise((resolve, reject) => {
+    videoDownloadQueue.push({ task, resolve, reject });
+    processVideoDownloadQueue();
+  });
+}
+
+function processVideoDownloadQueue() {
+  while (activeVideoDownloads < MAX_CONCURRENT_DOWNLOADS && videoDownloadQueue.length > 0) {
+    const item = videoDownloadQueue.shift();
+    activeVideoDownloads += 1;
+
+    Promise.resolve()
+      .then(item.task)
+      .then(item.resolve, item.reject)
+      .finally(() => {
+        activeVideoDownloads = Math.max(0, activeVideoDownloads - 1);
+        processVideoDownloadQueue();
+      });
+  }
+}
 
 function buildError(message, extra = {}) {
   return { success: false, error: message, ...extra };
@@ -317,7 +344,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     (async () => {
       try {
         if (message.url.includes('.m3u8')) {
-          const downloadId = await downloadHlsAsMp4(message.url, finalName, reporter);
+          const downloadId = await enqueueVideoDownload(() => downloadHlsAsMp4(message.url, finalName, reporter));
           sendResponse(buildSuccess({ downloadId, message: 'Guardado en tu carpeta de descargas' }));
           return;
         }
@@ -362,7 +389,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             ...message.job,
             label: `${message.job?.label || 'Video'} ${index + 1}/${videos.length}`
           });
-          const downloadId = await downloadHlsAsMp4(videos[index].url, finalName, childReporter);
+          const downloadId = await enqueueVideoDownload(() => downloadHlsAsMp4(videos[index].url, finalName, childReporter));
           downloadIds.push(downloadId);
         }
 

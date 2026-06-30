@@ -1,4 +1,18 @@
-﻿# Changelog
+# Changelog
+
+## 1.2.0 - 2026-06-30
+
+### Added
+- Cola global para limitar descargas HLS a 2 videos simultaneos.
+- Documento offscreen para resolver playlists HLS, descargar segmentos y crear el Blob MP4 fuera del service worker MV3.
+
+### Changed
+- El `background.js` ahora solo orquesta la cola de descargas HLS; el trabajo pesado de media vive en `offscreen.js`.
+- El content script procesa solo nodos de producto nuevos y debouncea mutaciones a 250ms.
+
+### Fixed
+- Se revocan los object URLs tras confirmar la descarga para evitar crecimiento de memoria.
+- Se cachean ASIN ya analizados para no reanalizar ni repintar badges en scroll o cambios de filtros.
 
 ## 1.1.0 - 2026-04-08
 

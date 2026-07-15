@@ -461,22 +461,52 @@ function processProductPage() {
 
 // â”€â”€ VIDEOS PARA EL POPUP (pÃ¡gina de producto) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+function normalizeEmbeddedVideoUrl(rawUrl) {
+  if (!rawUrl) return '';
+
+  const cleaned = String(rawUrl)
+    .replace(/\\u002F/gi, '/')
+    .replace(/\\\//g, '/')
+    .replace(/&amp;/g, '&');
+
+  try {
+    return new URL(cleaned, location.href).href;
+  } catch (_) {
+    return cleaned;
+  }
+}
+
 function findVideosOnPage() {
   const videos = [];
   const seen   = new Set();
   const add    = (url, type) => {
-    if (url && !seen.has(url) && url.startsWith('http')) {
-      seen.add(url); videos.push({ url, type });
-    }
+    const normalized = normalizeEmbeddedVideoUrl(url);
+    if (!normalized || !normalized.startsWith('http') || seen.has(normalized)) return;
+    if (!/\.(?:mp4|webm|m3u8)(?:[?#]|$)/i.test(normalized)) return;
+
+    seen.add(normalized);
+    videos.push({ url: normalized, type });
   };
+
   document.querySelectorAll('video').forEach(v => {
     add(v.src, 'direct');
     v.querySelectorAll('source').forEach(s => add(s.src, 'source'));
   });
+
   document.querySelectorAll('script:not([src])').forEach(s => {
-    const m = s.textContent.matchAll(/["'](https:\/\/[^"'\s]*\.(?:mp4|webm|m3u8)[^"'\s]*?)["']/g);
-    for (const x of m) add(x[1], 'script');
+    const text = (s.textContent || '')
+      .replace(/\\u002F/gi, '/')
+      .replace(/\\\//g, '/')
+      .replace(/&amp;/g, '&');
+    const matches = text.matchAll(/https?:\/\/[^"'<>\s]+?\.(?:mp4|webm|m3u8)(?:\?[^"'<>\s]*)?/gi);
+    for (const match of matches) add(match[0], 'script');
   });
+
+  try {
+    const intercepted = JSON.parse(sessionStorage.getItem('_pr_vids') || '[]');
+    intercepted.forEach(url => add(url, 'intercepted'));
+  } catch (_) {}
+
   return videos;
 }
 
@@ -540,26 +570,23 @@ function getProductTitle() {
     '#title span',
     'h1.a-size-large',
     'h1[data-automation-id="title"]',
+    'h1',
   ];
   for (const sel of selectors) {
     const el = document.querySelector(sel);
     if (el?.textContent?.trim()) return el.textContent.trim();
   }
-  return '';
+
+  const metaTitle = document.querySelector('meta[property="og:title"], meta[name="title"]')?.content?.trim();
+  if (metaTitle) return metaTitle;
+
+  return document.title?.replace(/\s*[:|-]\s*Amazon.*$/i, '').trim() || '';
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'getVideos') {
     const v     = findVideosOnPage();
     const title = getProductTitle();
-
-    // AÃ±adir URLs capturadas por el interceptor de fetch/XHR (interceptor.js, MAIN world)
-    try {
-      const intercepted = JSON.parse(sessionStorage.getItem('_pr_vids') || '[]');
-      intercepted.forEach(url => {
-        if (!v.some(x => x.url === url)) v.push({ url, type: 'intercepted' });
-      });
-    } catch (_) {}
 
     sendResponse({ videos: v, hasVideos: v.length > 0, title });
   }

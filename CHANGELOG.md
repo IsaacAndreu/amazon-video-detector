@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.0 - 2026-07-15
+
+### Added
+- Soporte inicial para detectar y descargar streams HLS en paginas de Amazon Live (`/live/video/`).
+- Captura de playlists `.m3u8` desde `fetch`, XHR y scripts embebidos en paginas Live.
+
+### Changed
+- El popup ahora funciona tambien en Amazon Live y reutiliza el downloader HLS existente.
+- Se ampliaron permisos de host para dominios HLS habituales de Amazon Live (`live-video.net` y `cloudfront.net`).
+
 ## 1.2.0 - 2026-06-30
 
 ### Added

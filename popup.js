@@ -8,7 +8,7 @@
   'www.amazon.it'
 ]);
 
-const VIDEO_CDN_RE = /vse-vms-transcoding-artifact|m\.media-amazon\.com\/[^"']*\.m3u8/i;
+const VIDEO_CDN_RE = /vse-vms-transcoding-artifact|m\.media-amazon\.com\/[^"']*\.m3u8|https?:\/\/[^"'<>\s]+?\.m3u8(?:[?#]|$)/i;
 
 function escapeHtml(str) {
   return (str || '')
@@ -38,9 +38,10 @@ async function getActiveAmazonTab() {
     const url = new URL(pageUrl);
     const isAmazon = SUPPORTED_HOSTS.has(url.hostname);
     const isProductPage = /\/(?:dp|gp\/product)\//.test(url.pathname);
-    return { tab, pageUrl, isAmazon, isProductPage, hostname: url.hostname };
+    const isLiveVideoPage = /^\/live\/video\//.test(url.pathname);
+    return { tab, pageUrl, isAmazon, isProductPage, isLiveVideoPage, hostname: url.hostname };
   } catch (_) {
-    return { tab, pageUrl, isAmazon: false, isProductPage: false, hostname: '' };
+    return { tab, pageUrl, isAmazon: false, isProductPage: false, isLiveVideoPage: false, hostname: '' };
   }
 }
 
@@ -56,8 +57,8 @@ function renderOutsideAmazon() {
 function renderNonProductPage() {
   renderState(`
     <div class="status-box">
-      <strong>Estas en Amazon, pero no en una ficha de producto.</strong><br>
-      Entra en un producto para ver sus videos y descargarlos desde aqui.
+      <strong>Estas en Amazon, pero no en una ficha de producto ni en Amazon Live.</strong><br>
+      Entra en un producto o en una pagina <code>/live/video/</code> para detectar videos.
     </div>
   `);
 }
@@ -75,11 +76,15 @@ function renderFetchError() {
   `);
 }
 
-function renderNoVideos(productTitle, marketplace) {
+function renderNoVideos(productTitle, marketplace, isLiveVideoPage = false) {
+  const hint = isLiveVideoPage
+    ? 'Reproduce el directo unos segundos y vuelve a abrir el popup. Si usa DRM, no sera descargable.'
+    : `Este producto no muestra videos detectables en ${escapeHtml(marketplace)}.`;
+
   renderState(`
     <div class="status-box">
       <strong>${escapeHtml(productTitle || 'No se encontraron videos')}</strong><br>
-      Este producto no muestra videos detectables en ${escapeHtml(marketplace)}.
+      ${hint}
     </div>
   `);
 }
@@ -91,7 +96,7 @@ function renderVideos(productTitle, marketplace, videos) {
   const cards = videos.map((video, index) => {
     const filename = video.filename;
     const tagClass = video.isRelated ? 'video-tag related' : 'video-tag';
-    const tagLabel = video.isRelated ? 'Relacionado' : 'Vendedor';
+    const tagLabel = video.isLive ? 'Live' : (video.isRelated ? 'Relacionado' : 'Vendedor');
 
     return `
       <div class="video-item">
@@ -231,9 +236,13 @@ function createFilename(baseTitle, video, index, totalVideos) {
   return `${safeBase}${suffix}.mp4`;
 }
 
-async function collectVideoData(tabId, pageUrl) {
+async function collectVideoData(tabId, pageUrl, { includeProductFetch = true } = {}) {
   let productTitle = '';
   let domVideos = [];
+  const isLivePage = (() => {
+    try { return /^\/live\/video\//.test(new URL(pageUrl).pathname); }
+    catch (_) { return false; }
+  })();
 
   try {
     const domResponse = await new Promise(resolve => {
@@ -241,21 +250,33 @@ async function collectVideoData(tabId, pageUrl) {
     });
 
     if (domResponse?.title) productTitle = domResponse.title;
-    domVideos = normalizeVideos(domResponse?.videos).map(video => ({ url: video.url, title: '', creator: '' }));
+    domVideos = normalizeVideos(domResponse?.videos).map(video => ({
+      url: video.url,
+      title: video.title || (isLivePage ? 'Amazon Live' : ''),
+      creator: video.creator || '',
+      isRelated: false,
+      isLive: isLivePage
+    }));
   } catch (_) {}
 
-  const pageResponse = await new Promise(resolve => {
-    chrome.runtime.sendMessage({ action: 'getAllVideos', pageUrl }, res => resolve(res || null));
-  });
+  let pageVideos = [];
 
-  if (!pageResponse?.success) {
-    throw new Error(pageResponse?.error || 'No se pudo leer la pagina');
+  if (includeProductFetch) {
+    const pageResponse = await new Promise(resolve => {
+      chrome.runtime.sendMessage({ action: 'getAllVideos', pageUrl }, res => resolve(res || null));
+    });
+
+    if (!pageResponse?.success) {
+      throw new Error(pageResponse?.error || 'No se pudo leer la pagina');
+    }
+
+    pageVideos = pageResponse.videos || [];
   }
 
   const merged = [];
   const seen = new Set();
 
-  [...(pageResponse.videos || []), ...domVideos].forEach(video => {
+  [...pageVideos, ...domVideos].forEach(video => {
     if (!video?.url || seen.has(video.url)) return;
     seen.add(video.url);
     merged.push(video);
@@ -263,7 +284,7 @@ async function collectVideoData(tabId, pageUrl) {
 
   const normalized = merged.map((video, index) => ({
     ...video,
-    isRelated: Boolean(video.title || video.creator),
+    isRelated: typeof video.isRelated === 'boolean' ? video.isRelated : Boolean(video.title || video.creator),
     filename: createFilename(productTitle, video, index, merged.length)
   }));
 
@@ -271,14 +292,14 @@ async function collectVideoData(tabId, pageUrl) {
 }
 
 async function init() {
-  const { tab, pageUrl, isAmazon, isProductPage, hostname } = await getActiveAmazonTab();
+  const { tab, pageUrl, isAmazon, isProductPage, isLiveVideoPage, hostname } = await getActiveAmazonTab();
 
   if (!isAmazon) {
     renderOutsideAmazon();
     return;
   }
 
-  if (!isProductPage || !tab?.id) {
+  if ((!isProductPage && !isLiveVideoPage) || !tab?.id) {
     renderNonProductPage();
     return;
   }
@@ -286,9 +307,9 @@ async function init() {
   renderLoading();
 
   try {
-    const { productTitle, videos } = await collectVideoData(tab.id, pageUrl);
+    const { productTitle, videos } = await collectVideoData(tab.id, pageUrl, { includeProductFetch: isProductPage });
     if (!videos.length) {
-      renderNoVideos(productTitle, hostname);
+      renderNoVideos(productTitle, hostname, isLiveVideoPage);
       return;
     }
 

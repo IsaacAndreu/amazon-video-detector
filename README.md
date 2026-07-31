@@ -1,20 +1,20 @@
-# ProdRadar
+﻿# ProdRadar
 
-Extensión de Chrome para detectar productos de Amazon con vídeo, crear un ranking visual y descargar assets en bloque.
+Chrome extension for Amazon research. It detects products with video, lets you build a ranking board, and downloads images and videos in bulk.
 
-## Qué hace
+## What it does
 
-- Detecta si un producto tiene vídeo en los resultados de búsqueda.
-- Muestra un badge sobre cada producto: `VIDEO` o `Sin vídeo`.
-- Permite añadir productos a un ranking lateral.
-- Descarga vídeos en formato `.mp4`.
-- Descarga imágenes y vídeos de varios productos de una sola vez.
-- Exporta un briefing en `.txt` con el ranking.
-- Permite copiar enlaces de afiliado si configuras tu tag.
+- Detects whether a product has video in Amazon search results.
+- Shows a badge over each product image.
+- Lets you add products to a persistent ranking sidebar.
+- Adds search, filters, and sorting to the ranking panel.
+- Downloads videos as `.mp4`.
+- Downloads images and videos in bulk.
+- Lets you include related videos in bulk downloads.
+- Exports the ranking as TXT, CSV, or JSON.
+- Stores your folder name, affiliate tag, and download preferences.
 
-## Marketplaces compatibles
-
-La extensión está preparada para trabajar en:
+## Supported marketplaces
 
 - `amazon.com`
 - `amazon.es`
@@ -24,174 +24,177 @@ La extensión está preparada para trabajar en:
 - `amazon.fr`
 - `amazon.it`
 
-## Requisitos
+## Requirements
 
-Antes de usarla, necesitas:
+- Google Chrome or another Chromium-based browser.
+- Normal access to Amazon in your browser.
+- Developer mode enabled in `chrome://extensions`.
 
-- Google Chrome o un navegador basado en Chromium.
-- Acceso normal a Amazon desde tu navegador.
-- Tener activado el modo desarrollador de extensiones para cargarla manualmente.
+## Installation
 
-## Instalación paso a paso
+1. Download or clone this repository.
+2. Open `chrome://extensions` in Chrome.
+3. Enable `Developer mode` in the top right corner.
+4. Click `Load unpacked`.
+5. Select this project folder.
+6. Confirm that `ProdRadar` appears in your extensions list.
+7. Optionally pin the extension in the browser toolbar.
 
-1. Descarga este repositorio o clónalo en tu ordenador.
-2. Abre Chrome y entra en `chrome://extensions`.
-3. Activa `Developer mode` en la esquina superior derecha.
-4. Pulsa `Load unpacked`.
-5. Selecciona la carpeta de este proyecto.
-6. Comprueba que aparece la extensión `ProdRadar` en la lista.
-7. Si quieres, fíjala en la barra de extensiones para tener el popup más a mano.
+## Step-by-step usage
 
-## Tutorial de uso
+### 1. Open Amazon
 
-### 1. Entra en Amazon
+Go to any supported marketplace and browse products normally.
 
-Abre cualquiera de los marketplaces compatibles y busca productos como harías normalmente.
+### 2. Wait for the badges
 
-### 2. Espera a que aparezcan los badges
+ProdRadar checks visible products and adds a badge over each image:
 
-En los resultados, la extensión analiza cada producto y añade un badge sobre la imagen:
+- `VIDEO`: video detected
+- `Sin video`: no video detected
+- `Sin datos`: the product could not be checked correctly
 
-- `VIDEO`: el producto tiene vídeo detectado.
-- `Sin vídeo`: no se ha encontrado vídeo.
-- `Sin datos`: no se pudo comprobar correctamente.
+Detection is lazy-loaded, so results can appear progressively while you scroll.
 
-La detección no siempre es instantánea. La extensión va cargando los productos visibles poco a poco para no saturar la página.
+### 3. Add products to the ranking
 
-### 3. Añade productos al ranking
+Hover a product and click `+ Ranking`.
 
-Pasa el ratón por encima de un producto y pulsa `+ Ranking`.
+The extension stores:
 
-Cuando lo hagas:
+- ASIN
+- title
+- image
+- price
+- whether video was detected
 
-- el producto se guarda en el panel lateral
-- se conserva su posición
-- también se guarda si tenía vídeo, su imagen, precio y ASIN
+### 4. Open the sidebar
 
-### 4. Abre el panel lateral
+A vertical `PRODRADAR` tab appears on the right side of the page.
 
-En el lado derecho verás una pestaña vertical llamada `RANKING`.
+Inside the panel you can:
 
-Desde ese panel puedes:
+- review all saved products
+- search by title or ASIN
+- filter products with or without video
+- sort manually, by date, by title, or by price
+- drag and drop items when manual order is active
+- remove individual items
+- clear the whole ranking
 
-- ver todos los productos guardados
-- cambiar el orden manualmente
-- moverlos con drag and drop
-- eliminar productos individuales
-- limpiar todo el ranking
+### 5. Configure the working folder
 
-### 5. Configura la carpeta de descarga
+Use the `Carpeta` field at the bottom of the panel.
 
-En la parte inferior del panel hay un campo `Carpeta`.
-
-Ese nombre se usará como carpeta raíz cuando descargues assets. Por ejemplo:
+That value becomes the root folder for bulk downloads, for example:
 
 ```text
-mi-proyecto/
+my-project/
   01_B0XXXXXXX/
   02_B0YYYYYYY/
 ```
 
-### 6. Configura tu tag de afiliado opcionalmente
+### 6. Configure your preferences
 
-En el campo `Tag afil.` puedes escribir tu tag de Amazon Associates, por ejemplo `mitag-21`.
+The sidebar stores these options between sessions:
 
-Sirve para:
+- download images
+- download videos
+- include related videos
+- auto-open the panel when adding products
+- folder name
+- affiliate tag
 
-- copiar enlaces de afiliado desde cada producto del ranking
-- incluir enlaces con tag dentro del briefing exportado
+### 7. Configure your affiliate tag
 
-### 7. Descargar un vídeo individual desde una ficha de producto
+Use the `Tag afiliado` field if you want affiliate-ready links.
 
-Si entras en la página de un producto:
+This is used to:
 
-1. abre el icono de la extensión
-2. espera a que el popup busque los vídeos
-3. si encuentra alguno, verás una lista
-4. pulsa `Descargar en 1 clic`
+- copy affiliate links from saved products
+- include affiliate URLs in exports
 
-El archivo se guardará en tu carpeta de descargas.
+### 8. Download a single product video
 
-### 8. Descargar todos los assets del ranking
+On a product detail page:
 
-Con productos ya añadidos al ranking:
+1. click the extension icon
+2. wait for the popup to scan the page
+3. review the detected seller and related videos
+4. click `Descargar MP4` on any item
 
-1. abre el panel lateral
-2. revisa el orden
-3. escribe el nombre de la carpeta
-4. pulsa `Descargar todos los assets`
+The file is saved to your downloads folder.
 
-La extensión intentará descargar:
+### 9. Download all assets from the ranking
 
-- la imagen principal de cada producto
-- el vídeo del vendedor si existe
+With products already added to the ranking:
 
-La estructura habitual será parecida a esta:
+1. open the sidebar
+2. review the order
+3. set the folder name
+4. choose whether to download images, videos, and related videos
+5. click `Descargar assets`
+
+ProdRadar will organize files in a folder structure similar to:
 
 ```text
-nombre-del-proyecto/
+project-name/
   01_ASIN123456/
-    imagen.jpg
-    Nombre del producto.mp4
+    image.jpg
+    Product name.mp4
   02_ASIN654321/
-    imagen.jpg
+    image.jpg
   briefing.txt
 ```
 
-### 9. Exportar el briefing
+The sidebar also shows progress while the bulk job is running.
 
-Pulsa `Exportar briefing` para generar un archivo `briefing.txt` con:
+### 10. Export the ranking
 
-- posición del ranking
-- título del producto
-- ASIN
-- precio
-- si tiene vídeo o no
-- URL del producto
-- URL de afiliado si has configurado un tag
+Use:
 
-## Cómo funciona internamente
+- `Export TXT` for a readable briefing
+- `Export CSV` for spreadsheets
+- `Export JSON` for automation or external tools
 
-Amazon suele servir estos vídeos como streams HLS (`.m3u8`).
+Each export includes product order, title, ASIN, price, video status, product URL, affiliate URL, and image URL.
 
-La extensión:
+## How it works
 
-1. detecta en el HTML del producto si existe vídeo asociado al ASIN
-2. localiza la playlist del vídeo
-3. descarga los segmentos del stream
-4. los concatena
-5. guarda el resultado con extensión `.mp4`
+Amazon often serves product videos as HLS streams (`.m3u8`).
 
-## Estructura del proyecto
+ProdRadar:
+
+1. detects video clues in the product page HTML
+2. locates the playlist URL
+3. downloads the stream segments
+4. combines them
+5. saves the result as `.mp4`
+
+## Project structure
 
 ```text
-manifest.json   Configuración principal de la extensión
-interceptor.js  Intercepta peticiones de vídeo en la página
-content.js      Añade badges y recoge datos de productos
-sidebar.js      Crea el panel lateral de ranking
-popup.html      Interfaz del popup
-popup.js        Lógica del popup
-background.js   Descarga vídeos y archivos
-icons/          Iconos de la extensión
+manifest.json   Main extension manifest
+interceptor.js  Intercepts fetch/XHR requests on Amazon pages
+content.js      Adds badges and extracts product data
+sidebar.js      Injects the ranking sidebar into Amazon pages
+popup.html      Popup layout
+popup.js        Popup logic
+background.js   Video and file downloads
+icons/          Extension icons
 ```
 
-## Limitaciones y notas importantes
+## Limitations
 
-- Amazon cambia su HTML con frecuencia, así que algunas detecciones pueden dejar de funcionar si cambian la estructura de la página.
-- La detección está pensada para vídeo del vendedor y algunos vídeos relacionados, pero puede no capturar todos los casos posibles.
-- La descarga masiva está enfocada sobre todo al vídeo principal del producto cuando existe.
-- Si un vídeo no aparece, a veces basta con recargar la página del producto.
-- Para generar enlaces cortos de afiliado, Amazon puede requerir sesión iniciada y que SiteStripe esté disponible en tu cuenta.
+- Amazon changes its HTML frequently, so detection may need updates over time.
+- The extension is optimized for seller videos and some related videos, but it may not catch every case.
+- Bulk video download is based on what can be detected from the product page at that moment.
+- Short affiliate links depend on account/session availability in Amazon Associates.
 
-## Consejos para compartirla con otra persona
+## Changelog
 
-Si la vas a subir a GitHub y compartirla con un amigo, lo más cómodo es indicarle:
+See [CHANGELOG.md](CHANGELOG.md).
 
-1. que descargue el ZIP del repo
-2. que lo descomprima
-3. que cargue la carpeta desde `chrome://extensions`
-4. que use Chrome en uno de los marketplaces soportados
+## License
 
-## Estado del proyecto
-
-Proyecto funcional orientado a uso personal o compartido de forma privada. Si vas a seguir evolucionándolo, merece la pena añadir capturas, un changelog y una licencia antes de publicarlo más ampliamente.
+This project is released under the [MIT License](LICENSE).

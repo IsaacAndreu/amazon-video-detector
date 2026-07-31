@@ -1,13 +1,14 @@
-{
+﻿{
   "manifest_version": 3,
   "name": "ProdRadar",
-  "version": "1.0",
-  "description": "Detecta productos con vídeo en Amazon y genera tu ranking en segundos.",
+  "version": "1.1.0",
+  "description": "Detecta videos de productos en Amazon, crea rankings y descarga assets en bloque.",
   "permissions": [
     "downloads",
     "activeTab",
     "scripting",
-    "storage"
+    "storage",
+    "tabs"
   ],
   "host_permissions": [
     "https://www.amazon.com/*",
@@ -57,5 +58,10 @@
   ],
   "background": {
     "service_worker": "background.js"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "prodradar@extension.com"
+    }
   }
 }

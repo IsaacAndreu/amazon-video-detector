@@ -1,10 +1,23 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Amazon Video Detector</title>
+  <title>ProdRadar</title>
   <style>
+    :root {
+      --bg: #f4f1ea;
+      --panel: #fffdf8;
+      --ink: #1e2a32;
+      --muted: #67727a;
+      --line: #ddd5c8;
+      --accent: #d86a1c;
+      --accent-dark: #a94f11;
+      --good: #1f7a3f;
+      --bad: #b53b2e;
+      --chip: #efe7da;
+    }
+
     * {
       box-sizing: border-box;
       margin: 0;
@@ -12,220 +25,259 @@
     }
 
     body {
-      width: 340px;
-      font-family: Arial, sans-serif;
-      background: #f0f2f5;
-      color: #333;
+      width: 360px;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top right, #f3c49d 0, rgba(243, 196, 157, 0.25) 28%, transparent 45%),
+        linear-gradient(180deg, #f8f4ec 0%, #f0ebe2 100%);
+      font-family: Georgia, "Times New Roman", serif;
     }
 
     header {
-      background: #232f3e;
-      color: white;
-      padding: 14px 16px;
-      display: flex;
+      padding: 16px 18px 12px;
+      border-bottom: 1px solid rgba(30, 42, 50, 0.08);
+      background: rgba(255, 253, 248, 0.82);
+      backdrop-filter: blur(6px);
+    }
+
+    .eyebrow {
+      display: inline-flex;
       align-items: center;
-      gap: 10px;
+      gap: 6px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: var(--chip);
+      color: var(--accent-dark);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-family: Arial, sans-serif;
     }
 
     header h1 {
-      font-size: 15px;
-      font-weight: bold;
+      margin-top: 10px;
+      font-size: 24px;
+      line-height: 1;
     }
 
-    header span {
-      font-size: 20px;
+    header p {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+      font-family: Arial, sans-serif;
     }
 
     #content {
-      padding: 12px;
+      padding: 14px;
     }
 
-    .loading {
+    .card {
+      background: var(--panel);
+      border: 1px solid rgba(30, 42, 50, 0.08);
+      border-radius: 16px;
+      padding: 14px;
+      box-shadow: 0 10px 24px rgba(30, 42, 50, 0.08);
+    }
+
+    .status-box {
       text-align: center;
-      color: #888;
-      padding: 24px 0;
-      font-size: 14px;
-    }
-
-    .no-videos {
-      text-align: center;
-      color: #888;
-      padding: 24px 12px;
-      font-size: 14px;
-      line-height: 1.5;
-    }
-
-    .no-videos span {
-      font-size: 32px;
-      display: block;
-      margin-bottom: 8px;
-    }
-
-    .wrong-page {
-      text-align: center;
-      color: #888;
-      padding: 24px 12px;
-      font-size: 14px;
+      color: var(--muted);
+      padding: 20px 10px;
       line-height: 1.6;
+      font-size: 14px;
+      font-family: Arial, sans-serif;
     }
 
-    .wrong-page span {
-      font-size: 32px;
+    .status-box strong {
+      color: var(--ink);
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .metric {
+      background: #f8f2e8;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px;
+      font-family: Arial, sans-serif;
+    }
+
+    .metric-label {
       display: block;
-      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 4px;
     }
 
-    .info-box {
-      text-align: center;
-      padding: 20px 14px;
-      font-size: 13px;
-      line-height: 1.6;
-      color: #444;
+    .metric-value {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--ink);
     }
 
-    .info-box span {
-      font-size: 32px;
-      display: block;
-      margin-bottom: 10px;
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+      font-family: Arial, sans-serif;
     }
 
-    .video-count {
+    .toolbar button {
+      flex: 1;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: white;
+      color: var(--ink);
       font-size: 12px;
-      color: #666;
-      margin-bottom: 10px;
-      padding: 0 2px;
+      font-weight: 700;
+      padding: 8px 10px;
+      cursor: pointer;
+    }
+
+    .toolbar button:hover {
+      border-color: var(--accent);
+      color: var(--accent-dark);
     }
 
     .video-item {
+      border: 1px solid var(--line);
+      border-radius: 14px;
       background: white;
-      border: 1px solid #dde1e7;
-      border-radius: 10px;
       padding: 12px;
-      margin-bottom: 8px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      margin-bottom: 10px;
+      box-shadow: 0 6px 18px rgba(30, 42, 50, 0.05);
     }
 
-    .video-header {
+    .video-head {
       display: flex;
-      align-items: center;
-      gap: 8px;
+      justify-content: space-between;
+      gap: 10px;
       margin-bottom: 8px;
-    }
-
-    .video-icon {
-      font-size: 18px;
-    }
-
-    .video-meta {
-      flex: 1;
     }
 
     .video-title {
-      font-size: 12px;
-      font-weight: bold;
-      color: #232f3e;
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.4;
+      font-family: Arial, sans-serif;
     }
 
-    .video-type {
+    .video-meta {
+      color: var(--muted);
       font-size: 11px;
-      color: #999;
-      margin-top: 2px;
-    }
-
-    .video-creator {
-      font-size: 11px;
-      color: #666;
-      margin-top: 2px;
+      line-height: 1.5;
+      margin-top: 4px;
+      font-family: Arial, sans-serif;
     }
 
     .video-tag {
-      display: inline-block;
-      font-size: 9px;
-      font-weight: bold;
-      padding: 1px 6px;
-      border-radius: 8px;
-      margin-top: 3px;
+      align-self: flex-start;
+      white-space: nowrap;
+      border-radius: 999px;
+      padding: 3px 7px;
+      font-size: 10px;
+      font-weight: 700;
+      font-family: Arial, sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      background: #edf5ef;
+      color: var(--good);
+      border: 1px solid rgba(31, 122, 63, 0.2);
     }
-    .video-tag.seller   { background: #e3f2fd; color: #1565c0; }
-    .video-tag.related  { background: #f3e5f5; color: #6a1b9a; }
+
+    .video-tag.related {
+      background: #f6efe4;
+      color: var(--accent-dark);
+      border-color: rgba(216, 106, 28, 0.2);
+    }
 
     .video-url {
+      background: #f7f5ef;
+      border-radius: 8px;
+      padding: 7px 8px;
+      color: var(--muted);
       font-size: 10px;
-      color: #aaa;
-      word-break: break-all;
-      margin-bottom: 8px;
       line-height: 1.4;
-      background: #f8f8f8;
-      padding: 4px 6px;
-      border-radius: 4px;
+      word-break: break-all;
+      font-family: Consolas, monospace;
+      margin-bottom: 8px;
     }
 
     .btn-download {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
       width: 100%;
-      background: #ff6b00;
-      color: white;
       border: none;
-      border-radius: 8px;
-      padding: 9px;
-      cursor: pointer;
+      border-radius: 10px;
+      background: linear-gradient(180deg, var(--accent) 0%, var(--accent-dark) 100%);
+      color: white;
       font-size: 13px;
-      font-weight: bold;
-      transition: background 0.2s;
+      font-weight: 700;
+      padding: 10px;
+      cursor: pointer;
+      font-family: Arial, sans-serif;
     }
 
     .btn-download:hover:not(:disabled) {
-      background: #e05a00;
+      filter: brightness(1.02);
     }
 
     .btn-download:disabled {
-      cursor: not-allowed;
       opacity: 0.8;
+      cursor: wait;
     }
 
     .btn-download.success {
-      background: #2e7d32;
+      background: linear-gradient(180deg, #2f8a4e 0%, #1f7a3f 100%);
     }
 
     .btn-download.error {
-      background: #c62828;
+      background: linear-gradient(180deg, #c75243 0%, #b53b2e 100%);
     }
 
     .status-msg {
+      min-height: 15px;
+      margin-top: 6px;
       font-size: 11px;
-      margin-top: 5px;
       text-align: center;
-      min-height: 14px;
-      color: #2e7d32;
+      font-family: Arial, sans-serif;
+      color: var(--good);
     }
 
     .status-msg.error {
-      color: #c62828;
+      color: var(--bad);
     }
 
     footer {
+      padding: 10px 14px 14px;
+      color: var(--muted);
+      font-size: 11px;
       text-align: center;
-      font-size: 10px;
-      color: #bbb;
-      padding: 8px;
-      border-top: 1px solid #eee;
+      font-family: Arial, sans-serif;
     }
   </style>
 </head>
 <body>
   <header>
-    <span>🎬</span>
-    <h1>Amazon Video Detector</h1>
+    <div class="eyebrow">ProdRadar</div>
+    <h1>Video finder for Amazon</h1>
+    <p>Detecta videos, revisa lo disponible y descarga rapido desde la ficha del producto.</p>
   </header>
 
   <div id="content">
-    <div class="loading">⏳ Buscando videos...</div>
+    <div class="card">
+      <div class="status-box">Cargando informacion del producto...</div>
+    </div>
   </div>
 
-  <footer>Solo para uso personal</footer>
+  <footer>Para uso propio. Amazon puede cambiar el HTML y afectar la deteccion.</footer>
 
   <script src="popup.js"></script>
 </body>

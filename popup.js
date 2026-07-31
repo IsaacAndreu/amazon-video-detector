@@ -1,154 +1,301 @@
-document.addEventListener('DOMContentLoaded', async () => {
-  const content = document.getElementById('content');
+﻿const SUPPORTED_HOSTS = new Set([
+  'www.amazon.com',
+  'www.amazon.es',
+  'www.amazon.co.uk',
+  'www.amazon.com.mx',
+  'www.amazon.de',
+  'www.amazon.fr',
+  'www.amazon.it'
+]);
 
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-  const isAmazon = tab.url && (
-    tab.url.includes('amazon.com') ||
-    tab.url.includes('amazon.es') ||
-    tab.url.includes('amazon.co.uk') ||
-    tab.url.includes('amazon.com.mx')
-  );
-
-  if (!isAmazon) {
-    content.innerHTML = `
-      <div class="wrong-page">
-        <span>🛒</span>
-        Navega a Amazon y los badges<br>apareceran sobre cada producto.
-      </div>`;
-    return;
-  }
-
-  const isProductPage = tab.url.includes('/dp/');
-
-  if (!isProductPage) {
-    content.innerHTML = `
-      <div class="info-box">
-        <span>🏷️</span>
-        <p>Los badges <strong style="color:#1a7f37">▶ VIDEO</strong> y <strong style="color:#555">✕ Sin video</strong> ya aparecen sobre cada producto en la pagina.</p>
-        <p style="margin-top:8px; color:#888; font-size:11px;">Entra en un producto con video para poder descargarlo.</p>
-      </div>`;
-    return;
-  }
-
-  // Pagina de producto: mostrar spinner mientras carga
-  content.innerHTML = `<div class="loading">⏳ Buscando vídeos…</div>`;
-
-  // Obtener título + vídeos del DOM en vivo (content script)
-  let productTitle = '';
-  let domVideos = [];
-  try {
-    await new Promise(resolve => {
-      chrome.tabs.sendMessage(tab.id, { action: 'getVideos' }, (res) => {
-        if (!chrome.runtime.lastError && res) {
-          if (res.title)  productTitle = res.title;
-          // Filtrar solo URLs de CDN de vídeo de Amazon (VSE + reseñas)
-          if (res.videos) {
-            const cdnRe = /vse-vms-transcoding-artifact|m\.media-amazon\.com\/[^"]*\.m3u8/;
-            domVideos = res.videos
-              .filter(v => v.url && cdnRe.test(v.url))
-              .map(v => ({ url: v.url, title: '', creator: '' }));
-          }
-        }
-        resolve();
-      });
-    });
-  } catch (_) {}
-
-  // Obtener TODOS los vídeos (vendedor + relacionados) via fetch de la página
-  chrome.runtime.sendMessage({ action: 'getAllVideos', pageUrl: tab.url }, (response) => {
-    if (chrome.runtime.lastError || !response?.success) {
-      content.innerHTML = `
-        <div class="no-videos">
-          <span>⚠️</span>
-          No se pudo leer la pagina.<br>Recargala e intentalo de nuevo.
-        </div>`;
-      return;
-    }
-
-    // Combinar: resultados del fetch de la página + vídeos del DOM en vivo (sin duplicar)
-    const seen   = new Set((response.videos || []).map(v => v.url));
-    const extra  = domVideos.filter(v => !seen.has(v.url));
-    const videos = [...(response.videos || []), ...extra];
-
-    if (!videos.length) {
-      content.innerHTML = `
-        <div class="no-videos">
-          <span>🚫</span>
-          Este producto no tiene vídeos.
-        </div>`;
-      return;
-    }
-
-    const safeTitle = productTitle
-      ? productTitle.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 80)
-      : 'amazon-video';
-
-    content.innerHTML = `<div class="video-count">✅ ${videos.length} vídeo${videos.length > 1 ? 's' : ''} encontrado${videos.length > 1 ? 's' : ''}:</div>`;
-
-    videos.forEach((video, index) => {
-      const suffix   = videos.length > 1 ? `-${index + 1}` : '';
-      // Usar el título del vídeo si existe, si no el del producto
-      const vidSafeTitle = video.title
-        ? video.title.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 80)
-        : safeTitle;
-      const filename = `${vidSafeTitle}${suffix}.mp4`;
-
-      const isRelated = !!(video.title || video.creator);
-      const label   = video.title   || `Vídeo vendedor ${index + 1}`;
-      const creator = video.creator ? `<div class="video-creator">👤 ${escapeHtml(video.creator)}</div>` : '';
-      const tag     = isRelated ? `<span class="video-tag related">Relacionado</span>` : `<span class="video-tag seller">Vendedor</span>`;
-      const shortUrl = video.url.length > 65 ? video.url.substring(0, 62) + '...' : video.url;
-
-      const item = document.createElement('div');
-      item.className = 'video-item';
-      item.innerHTML = `
-        <div class="video-header">
-          <span class="video-icon">🎥</span>
-          <div class="video-meta">
-            <div class="video-title">${escapeHtml(label)}</div>
-            ${creator}
-            ${tag}
-          </div>
-        </div>
-        <div class="video-url">${shortUrl}</div>
-        <button class="btn-download" id="btn-${index}" data-url="${escapeHtml(video.url)}" data-filename="${escapeHtml(filename)}">
-          ⬇️ Descargar en 1 clic
-        </button>
-        <div class="status-msg" id="status-${index}"></div>
-      `;
-      content.appendChild(item);
-    });
-
-    document.querySelectorAll('.btn-download').forEach((btn, idx) => {
-      btn.addEventListener('click', () => {
-        btn.disabled = true;
-        btn.textContent = '⏳ Descargando...';
-        const status = document.getElementById(`status-${idx}`);
-        status.textContent = '';
-        status.className = 'status-msg';
-
-        chrome.runtime.sendMessage(
-          { action: 'downloadVideo', url: btn.dataset.url, filename: btn.dataset.filename },
-          (res) => {
-            if (res?.success) {
-              btn.textContent = '✅ Descargado';
-              btn.classList.add('success');
-              status.textContent = 'Guardado en tu carpeta de Descargas';
-            } else {
-              btn.textContent = '❌ Reintentar';
-              btn.classList.add('error');
-              btn.disabled = false;
-              status.textContent = res?.error || 'Error. Intenta de nuevo.';
-              status.className = 'status-msg error';
-            }
-          }
-        );
-      });
-    });
-  });
-});
+const VIDEO_CDN_RE = /vse-vms-transcoding-artifact|m\.media-amazon\.com\/[^"']*\.m3u8/i;
 
 function escapeHtml(str) {
-  return (str || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return (str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
+
+function shortUrl(url) {
+  return url.length > 72 ? `${url.slice(0, 69)}...` : url;
+}
+
+function normalizeVideos(videos) {
+  return (videos || []).filter(video => video?.url && VIDEO_CDN_RE.test(video.url));
+}
+
+function renderState(html) {
+  document.getElementById('content').innerHTML = `<div class="card">${html}</div>`;
+}
+
+async function getActiveAmazonTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const pageUrl = tab?.url || '';
+
+  try {
+    const url = new URL(pageUrl);
+    const isAmazon = SUPPORTED_HOSTS.has(url.hostname);
+    const isProductPage = /\/(?:dp|gp\/product)\//.test(url.pathname);
+    return { tab, pageUrl, isAmazon, isProductPage, hostname: url.hostname };
+  } catch (_) {
+    return { tab, pageUrl, isAmazon: false, isProductPage: false, hostname: '' };
+  }
+}
+
+function renderOutsideAmazon() {
+  renderState(`
+    <div class="status-box">
+      <strong>Abre Amazon primero.</strong><br>
+      Los badges y el ranking solo aparecen en los marketplaces compatibles.
+    </div>
+  `);
+}
+
+function renderNonProductPage() {
+  renderState(`
+    <div class="status-box">
+      <strong>Estas en Amazon, pero no en una ficha de producto.</strong><br>
+      Entra en un producto para ver sus videos y descargarlos desde aqui.
+    </div>
+  `);
+}
+
+function renderLoading() {
+  renderState('<div class="status-box">Buscando videos disponibles...</div>');
+}
+
+function renderFetchError() {
+  renderState(`
+    <div class="status-box">
+      <strong>No se pudo leer la pagina.</strong><br>
+      Recarga la ficha del producto e intentalo de nuevo.
+    </div>
+  `);
+}
+
+function renderNoVideos(productTitle, marketplace) {
+  renderState(`
+    <div class="status-box">
+      <strong>${escapeHtml(productTitle || 'No se encontraron videos')}</strong><br>
+      Este producto no muestra videos detectables en ${escapeHtml(marketplace)}.
+    </div>
+  `);
+}
+
+function renderVideos(productTitle, marketplace, videos) {
+  const sellerCount = videos.filter(video => !video.isRelated).length;
+  const relatedCount = videos.length - sellerCount;
+
+  const cards = videos.map((video, index) => {
+    const filename = video.filename;
+    const tagClass = video.isRelated ? 'video-tag related' : 'video-tag';
+    const tagLabel = video.isRelated ? 'Relacionado' : 'Vendedor';
+
+    return `
+      <div class="video-item">
+        <div class="video-head">
+          <div>
+            <div class="video-title">${escapeHtml(video.title || `Video ${index + 1}`)}</div>
+            <div class="video-meta">${escapeHtml(video.creator || marketplace)}</div>
+          </div>
+          <span class="${tagClass}">${tagLabel}</span>
+        </div>
+        <div class="video-url">${escapeHtml(shortUrl(video.url))}</div>
+        <button class="btn-download" data-index="${index}" data-url="${escapeHtml(video.url)}" data-filename="${escapeHtml(filename)}">
+          Descargar MP4
+        </button>
+        <div class="status-msg" id="status-${index}"></div>
+      </div>
+    `;
+  }).join('');
+
+  renderState(`
+    <div class="summary">
+      <div class="metric">
+        <span class="metric-label">Producto</span>
+        <span class="metric-value">${videos.length}</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Marketplace</span>
+        <span class="metric-value" style="font-size:13px">${escapeHtml(marketplace)}</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Videos del vendedor</span>
+        <span class="metric-value">${sellerCount}</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Relacionados</span>
+        <span class="metric-value">${relatedCount}</span>
+      </div>
+    </div>
+    <div class="toolbar">
+      <button id="download-seller">Solo vendedor</button>
+      <button id="download-all">Descargar todos</button>
+    </div>
+    <div class="video-meta" style="margin-bottom:12px;font-size:12px;line-height:1.6;">
+      <strong style="color:#1e2a32;display:block;margin-bottom:4px;">${escapeHtml(productTitle || 'Producto Amazon')}</strong>
+      Revisa cada video o lanza una descarga en lote desde aqui.
+    </div>
+    ${cards}
+  `);
+
+  const queueButtons = (selectedVideos) => {
+    selectedVideos.forEach(video => {
+      const button = document.querySelector(`button[data-filename="${CSS.escape(video.filename)}"]`);
+      if (button) runDownload(button);
+    });
+  };
+
+  document.getElementById('download-seller').addEventListener('click', () => {
+    queueButtons(videos.filter(video => !video.isRelated));
+  });
+
+  document.getElementById('download-all').addEventListener('click', () => {
+    queueButtons(videos);
+  });
+
+  document.querySelectorAll('.btn-download').forEach(button => {
+    button.addEventListener('click', () => runDownload(button));
+  });
+}
+
+function setButtonState(button, mode, statusText) {
+  const index = button.dataset.index;
+  const status = document.getElementById(`status-${index}`);
+  button.classList.remove('success', 'error');
+
+  if (mode === 'idle') {
+    button.disabled = false;
+    button.textContent = 'Descargar MP4';
+    status.textContent = statusText || '';
+    status.className = 'status-msg';
+    return;
+  }
+
+  if (mode === 'progress') {
+    button.disabled = true;
+    button.textContent = 'Descargando...';
+    status.textContent = statusText || 'Preparando descarga';
+    status.className = 'status-msg';
+    return;
+  }
+
+  if (mode === 'success') {
+    button.disabled = true;
+    button.classList.add('success');
+    button.textContent = 'Descargado';
+    status.textContent = statusText || 'Guardado en tu carpeta de descargas';
+    status.className = 'status-msg';
+    return;
+  }
+
+  button.disabled = false;
+  button.classList.add('error');
+  button.textContent = 'Reintentar';
+  status.textContent = statusText || 'No se pudo descargar';
+  status.className = 'status-msg error';
+}
+
+function runDownload(button) {
+  setButtonState(button, 'progress', 'Preparando descarga');
+  chrome.runtime.sendMessage(
+    {
+      action: 'downloadVideo',
+      url: button.dataset.url,
+      filename: button.dataset.filename
+    },
+    (response) => {
+      if (chrome.runtime.lastError || !response?.success) {
+        setButtonState(button, 'error', response?.error || 'No se pudo descargar este video');
+        return;
+      }
+
+      setButtonState(button, 'success', response.message || 'Guardado en tu carpeta de descargas');
+    }
+  );
+}
+
+function createFilename(baseTitle, video, index, totalVideos) {
+  const safeBase = (video.title || baseTitle || 'amazon-video')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\x20-\x7E]/g, '')
+    .replace(/[\\/:*?"<>|]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80) || 'amazon-video';
+
+  const suffix = totalVideos > 1 ? `-${index + 1}` : '';
+  return `${safeBase}${suffix}.mp4`;
+}
+
+async function collectVideoData(tabId, pageUrl) {
+  let productTitle = '';
+  let domVideos = [];
+
+  try {
+    const domResponse = await new Promise(resolve => {
+      chrome.tabs.sendMessage(tabId, { action: 'getVideos' }, res => resolve(res || null));
+    });
+
+    if (domResponse?.title) productTitle = domResponse.title;
+    domVideos = normalizeVideos(domResponse?.videos).map(video => ({ url: video.url, title: '', creator: '' }));
+  } catch (_) {}
+
+  const pageResponse = await new Promise(resolve => {
+    chrome.runtime.sendMessage({ action: 'getAllVideos', pageUrl }, res => resolve(res || null));
+  });
+
+  if (!pageResponse?.success) {
+    throw new Error(pageResponse?.error || 'No se pudo leer la pagina');
+  }
+
+  const merged = [];
+  const seen = new Set();
+
+  [...(pageResponse.videos || []), ...domVideos].forEach(video => {
+    if (!video?.url || seen.has(video.url)) return;
+    seen.add(video.url);
+    merged.push(video);
+  });
+
+  const normalized = merged.map((video, index) => ({
+    ...video,
+    isRelated: Boolean(video.title || video.creator),
+    filename: createFilename(productTitle, video, index, merged.length)
+  }));
+
+  return { productTitle, videos: normalized };
+}
+
+async function init() {
+  const { tab, pageUrl, isAmazon, isProductPage, hostname } = await getActiveAmazonTab();
+
+  if (!isAmazon) {
+    renderOutsideAmazon();
+    return;
+  }
+
+  if (!isProductPage || !tab?.id) {
+    renderNonProductPage();
+    return;
+  }
+
+  renderLoading();
+
+  try {
+    const { productTitle, videos } = await collectVideoData(tab.id, pageUrl);
+    if (!videos.length) {
+      renderNoVideos(productTitle, hostname);
+      return;
+    }
+
+    renderVideos(productTitle, hostname, videos);
+  } catch (_) {
+    renderFetchError();
+  }
+}
+
+document.addEventListener('DOMContentLoaded', init);
